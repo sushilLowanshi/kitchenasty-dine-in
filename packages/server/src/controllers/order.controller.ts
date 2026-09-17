@@ -42,7 +42,28 @@ const createOrderSchema = z.object({
   guestEmail: z.string().email().optional(),
   guestPhone: z.string().optional(),
   loyaltyPointsRedeem: z.number().int().min(0).optional(),
+  // Kiosk orders send kioskId only. tableId from the client is ignored.
+  kioskId: z.string().min(1).optional(),
 });
+
+const orderTableInclude = { select: { id: true, name: true } } as const;
+
+async function resolveKioskTable(kioskId: string): Promise<
+  | { tableId: string; locationId: string }
+  | { error: string; status: number }
+> {
+  const kiosk = await prisma.tableKiosk.findUnique({
+    where: { id: kioskId },
+    include: { table: { select: { id: true, isActive: true, locationId: true } } },
+  });
+  if (!kiosk?.table) {
+    return { error: 'Invalid table screen', status: 404 };
+  }
+  if (!kiosk.isActive || !kiosk.table.isActive) {
+    return { error: 'This table screen is currently unavailable', status: 400 };
+  }
+  return { tableId: kiosk.table.id, locationId: kiosk.table.locationId };
+}
 
 function generateOrderNumber(): string {
   const prefix = 'KA';
@@ -58,7 +79,7 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { orderType, items, comment, scheduledAt, address, guestName, guestEmail, guestPhone, loyaltyPointsRedeem } = parsed.data;
+  const { orderType, items, comment, scheduledAt, address, guestName, guestEmail, guestPhone, loyaltyPointsRedeem, kioskId } = parsed.data;
 
   // Delivery-only: address required (DINE_IN / PICKUP skip)
   if (orderType === 'DELIVERY' && !address) {
@@ -98,14 +119,34 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // Get first location as default (for now)
-  const location = await prisma.location.findFirst({
-    where: { isActive: true },
-    include: { operatingHours: true },
-  });
-  if (!location) {
-    res.status(400).json({ success: false, error: 'No active location found' });
-    return;
+  let resolvedTableId: string | null = null;
+  let location;
+
+  if (kioskId) {
+    const resolved = await resolveKioskTable(kioskId);
+    if ('error' in resolved) {
+      res.status(resolved.status).json({ success: false, error: resolved.error });
+      return;
+    }
+    resolvedTableId = resolved.tableId;
+    location = await prisma.location.findFirst({
+      where: { id: resolved.locationId, isActive: true },
+      include: { operatingHours: true },
+    });
+    if (!location) {
+      res.status(400).json({ success: false, error: 'This table screen is currently unavailable' });
+      return;
+    }
+  } else {
+    // Non-kiosk orders keep the existing default-location behavior.
+    location = await prisma.location.findFirst({
+      where: { isActive: true },
+      include: { operatingHours: true },
+    });
+    if (!location) {
+      res.status(400).json({ success: false, error: 'No active location found' });
+      return;
+    }
   }
 
   // Check busy mode
@@ -286,11 +327,13 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
       guestName: customerId ? undefined : guestName,
       guestEmail: customerId ? undefined : guestEmail,
       guestPhone: customerId ? undefined : guestPhone,
+      tableId: resolvedTableId,
       items: { create: orderItemsData },
     },
     include: {
       items: { include: { options: true } },
       customer: { select: { id: true, name: true, email: true } },
+      table: orderTableInclude,
     },
   });
 
@@ -359,6 +402,7 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     orderNumber: order.orderNumber,
     status: order.status,
     orderType: order.orderType,
+    table: order.table,
   });
 
   // Emit event for automation rules
@@ -374,7 +418,10 @@ const addOrderItemsSchema = z.object({
   items: z.array(orderItemSchema).min(1),
 });
 
-/** Append items to an existing unpaid order (dine-in add-more flow). */
+/**
+ * Dine-in "add more" creates a new kitchen order with its own status.
+ * The original order is left unchanged so staff/admin can track each ticket separately.
+ */
 export async function addOrderItems(req: Request<{ id: string }>, res: Response): Promise<void> {
   const { id } = req.params;
   const parsed = addOrderItemsSchema.safeParse(req.body);
@@ -399,14 +446,6 @@ export async function addOrderItems(req: Request<{ id: string }>, res: Response)
 
   if (['COMPLETED', 'CANCELLED'].includes(order.status)) {
     res.status(400).json({ success: false, error: 'Cannot add items to a completed or cancelled order' });
-    return;
-  }
-
-  const completedPayment = await prisma.payment.findFirst({
-    where: { orderId: id, status: 'COMPLETED' },
-  });
-  if (completedPayment) {
-    res.status(400).json({ success: false, error: 'Cannot add items after payment' });
     return;
   }
 
@@ -457,20 +496,35 @@ export async function addOrderItems(req: Request<{ id: string }>, res: Response)
     };
   });
 
-  for (const itemData of orderItemsData) {
-    await prisma.orderItem.create({
-      data: {
-        orderId: id,
-        menuItemId: itemData.menuItemId,
-        name: itemData.name,
-        quantity: itemData.quantity,
-        unitPrice: itemData.unitPrice,
-        subtotal: itemData.subtotal,
-        comment: itemData.comment,
-        options: itemData.options,
-      },
-    });
-  }
+  const subtotal = orderItemsData.reduce((sum, item) => sum + item.subtotal, 0);
+  const TAX_RATE = 0.08;
+  const tax = subtotal * TAX_RATE;
+  const total = subtotal + tax;
+
+  const created = await prisma.order.create({
+    data: {
+      orderNumber: generateOrderNumber(),
+      customerId: order.customerId,
+      locationId: order.locationId,
+      orderType: order.orderType,
+      status: 'PENDING',
+      subtotal,
+      tax,
+      deliveryFee: 0,
+      discount: 0,
+      total,
+      guestName: order.guestName,
+      guestEmail: order.guestEmail,
+      guestPhone: order.guestPhone,
+      tableId: order.tableId,
+      items: { create: orderItemsData },
+    },
+    include: {
+      items: { include: { options: true } },
+      customer: { select: { id: true, name: true, email: true } },
+      table: orderTableInclude,
+    },
+  });
 
   for (const item of items) {
     const menuItem = menuItemMap.get(item.menuItemId)!;
@@ -482,29 +536,20 @@ export async function addOrderItems(req: Request<{ id: string }>, res: Response)
     }
   }
 
-  const allItems = await prisma.orderItem.findMany({ where: { orderId: id } });
-  const subtotal = allItems.reduce((sum, i) => sum + i.subtotal, 0);
-  const TAX_RATE = 0.08;
-  const tax = subtotal * TAX_RATE;
-  const total = subtotal + tax + order.deliveryFee - order.discount;
-
-  const updated = await prisma.order.update({
-    where: { id },
-    data: { subtotal, tax, total },
-    include: {
-      items: { include: { options: true } },
-      customer: { select: { id: true, name: true, email: true } },
-    },
-  });
-
   emitNewOrder({
-    id: updated.id,
-    orderNumber: updated.orderNumber,
-    status: updated.status,
-    orderType: updated.orderType,
+    id: created.id,
+    orderNumber: created.orderNumber,
+    status: created.status,
+    orderType: created.orderType,
+    table: created.table,
   });
 
-  res.json({ success: true, data: updated });
+  try {
+    const { appEvents } = await import('../lib/events.js');
+    appEvents.emit('order.created', { order: created });
+  } catch {}
+
+  res.status(201).json({ success: true, data: created });
 }
 
 export async function listOrders(req: Request, res: Response): Promise<void> {
@@ -532,6 +577,7 @@ export async function listOrders(req: Request, res: Response): Promise<void> {
       include: {
         customer: { select: { id: true, name: true, email: true } },
         location: { select: { id: true, name: true } },
+        table: orderTableInclude,
         _count: { select: { items: true } },
         ...(includeItems ? { items: { include: { options: true } } } : {}),
       },
@@ -554,6 +600,7 @@ export async function getOrder(req: Request<{ id: string }>, res: Response): Pro
     include: {
       customer: { select: { id: true, name: true, email: true, phone: true } },
       location: { select: { id: true, name: true } },
+      table: orderTableInclude,
       items: {
         include: {
           menuItem: { select: { id: true, name: true, slug: true } },
@@ -601,6 +648,7 @@ export async function listCustomerOrders(req: Request, res: Response): Promise<v
       orderBy: { createdAt: 'desc' },
       include: {
         location: { select: { id: true, name: true } },
+        table: orderTableInclude,
         _count: { select: { items: true } },
       },
     }),

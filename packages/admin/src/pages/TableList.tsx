@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
@@ -10,6 +10,14 @@ interface Table {
   _count: { reservations: number };
 }
 
+interface TableScreen {
+  id: string;
+  isActive: boolean;
+  path: string;
+  url: string | null;
+  table: { id: string; name: string };
+}
+
 interface LocationInfo {
   id: string;
   name: string;
@@ -19,6 +27,7 @@ export default function TableList() {
   const { locationId } = useParams();
   const navigate = useNavigate();
   const [tables, setTables] = useState<Table[]>([]);
+  const [screens, setScreens] = useState<Record<string, TableScreen>>({});
   const [location, setLocation] = useState<LocationInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,16 +37,24 @@ export default function TableList() {
   const [formCapacity, setFormCapacity] = useState(2);
   const [formActive, setFormActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [screenBusy, setScreenBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fetchTables = () => {
     setLoading(true);
     Promise.all([
       api.get<{ data: LocationInfo }>(`/locations/${locationId}`),
       api.get<{ data: Table[] }>(`/locations/${locationId}/tables`),
+      api.get<{ data: TableScreen[] }>(`/table-kiosks?locationId=${locationId}`),
     ])
-      .then(([locRes, tableRes]) => {
+      .then(([locRes, tableRes, kioskRes]) => {
         setLocation(locRes.data);
         setTables(tableRes.data);
+        const byTable: Record<string, TableScreen> = {};
+        for (const screen of kioskRes.data) {
+          byTable[screen.table.id] = screen;
+        }
+        setScreens(byTable);
         setLoading(false);
       })
       .catch((err) => { setError(err.message); setLoading(false); });
@@ -87,8 +104,64 @@ export default function TableList() {
     try {
       await api.delete(`/locations/${locationId}/tables/${id}`);
       setTables((prev) => prev.filter((t) => t.id !== id));
+      setScreens((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const upsertScreen = (screen: TableScreen) => {
+    setScreens((prev) => ({ ...prev, [screen.table.id]: screen }));
+  };
+
+  const createScreen = async (tableId: string) => {
+    setScreenBusy(tableId);
+    setNotice(null);
+    try {
+      const res = await api.post<{ data: TableScreen }>('/table-kiosks', { tableId });
+      upsertScreen(res.data);
+      setNotice('Table screen created.');
+    } catch (err: any) {
+      alert(err.message);
+    }
+    setScreenBusy(null);
+  };
+
+  const setScreenActive = async (screen: TableScreen, isActive: boolean) => {
+    setScreenBusy(screen.table.id);
+    setNotice(null);
+    try {
+      const res = await api.patch<{ data: TableScreen }>(`/table-kiosks/${screen.id}`, { isActive });
+      upsertScreen(res.data);
+      setNotice(isActive ? 'Table screen enabled.' : 'Table screen disabled.');
+    } catch (err: any) {
+      alert(err.message);
+    }
+    setScreenBusy(null);
+  };
+
+  const openScreen = (screen: TableScreen) => {
+    if (!screen.url) {
+      alert('Storefront URL is not configured. Set STOREFRONT_URL to open this screen.');
+      return;
+    }
+    window.open(screen.url, '_blank', 'noopener,noreferrer');
+  };
+
+  const copyScreenUrl = async (screen: TableScreen) => {
+    const value = screen.url || screen.path;
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard is not available');
+      }
+      await navigator.clipboard.writeText(value);
+      setNotice(screen.url ? 'Table screen URL copied.' : 'Table screen path copied. Set STOREFRONT_URL for a full URL.');
+    } catch {
+      alert('Could not copy the table screen URL.');
     }
   };
 
@@ -138,6 +211,10 @@ export default function TableList() {
           <p className="text-2xl font-bold text-blue-600">{totalCapacity}</p>
         </div>
       </div>
+
+      {notice && (
+        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{notice}</p>
+      )}
 
       {/* Form Modal */}
       {showForm && (
@@ -216,8 +293,20 @@ export default function TableList() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {tables.map((table) => (
-                <tr key={table.id} className="hover:bg-gray-50">
+              {tables.map((table) => {
+                const screen = screens[table.id];
+                const screenLabel = !screen ? 'NOT CONFIGURED' : screen.isActive ? 'ACTIVE' : 'DISABLED';
+                const screenClass = !screen
+                  ? 'bg-gray-100 text-gray-700'
+                  : screen.isActive
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-amber-100 text-amber-800';
+                const displayUrl = screen?.url || screen?.path || '';
+                const busy = screenBusy === table.id;
+
+                return (
+                <Fragment key={table.id}>
+                <tr className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {table.name}
                   </td>
@@ -242,7 +331,56 @@ export default function TableList() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                <tr className="bg-gray-50">
+                  <td colSpan={5} className="px-6 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-gray-800">Table Screen:</span>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${screenClass}`}>
+                            {screenLabel}
+                          </span>
+                        </div>
+                        {screen && (
+                          <p className="mt-1 text-xs text-gray-500 break-all">{displayUrl}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {!screen && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => createScreen(table.id)}
+                            className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50"
+                          >
+                            {busy ? 'Creating...' : 'Create Table Screen'}
+                          </button>
+                        )}
+                        {screen?.isActive && (
+                          <>
+                            <button type="button" onClick={() => openScreen(screen)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-white">
+                              Open Screen
+                            </button>
+                            <button type="button" onClick={() => copyScreenUrl(screen)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-white">
+                              Copy URL
+                            </button>
+                            <button type="button" disabled={busy} onClick={() => setScreenActive(screen, false)} className="px-3 py-1.5 border border-amber-300 text-amber-800 rounded-lg text-xs font-medium hover:bg-amber-50 disabled:opacity-50">
+                              Disable
+                            </button>
+                          </>
+                        )}
+                        {screen && !screen.isActive && (
+                          <button type="button" disabled={busy} onClick={() => setScreenActive(screen, true)} className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50">
+                            {busy ? 'Saving...' : 'Enable'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -27,6 +27,7 @@ interface OrderDetail {
   createdAt: string;
   customer: { id: string; name: string; email: string; phone: string | null } | null;
   location: { id: string; name: string };
+  table: { id: string; name: string } | null;
   items: OrderItem[];
 }
 
@@ -226,6 +227,12 @@ export default function OrderDetailPage() {
                 <dt className="text-gray-500">Order Type</dt>
                 <dd className="font-medium text-gray-900">{order.orderType}</dd>
               </div>
+              {order.table && (
+                <div>
+                  <dt className="text-gray-500">Table</dt>
+                  <dd className="font-medium text-gray-900">{order.table.name}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-gray-500">Location</dt>
                 <dd className="font-medium text-gray-900">{order.location.name}</dd>

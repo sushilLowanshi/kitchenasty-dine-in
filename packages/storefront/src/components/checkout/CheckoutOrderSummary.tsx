@@ -1,5 +1,8 @@
-import { Link } from 'react-router-dom';
-import type { CheckoutSummaryItem } from './types.js';
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { storePaths } from '../../lib/kioskPath.js';
+import type { CheckoutSummaryItem, SessionOrderRef } from './types.js';
+import { orderStatusBadgeClass, orderStatusLabel } from './types.js';
 
 interface CheckoutOrderSummaryProps {
   title: string;
@@ -16,9 +19,10 @@ interface CheckoutOrderSummaryProps {
   placeOrderDisabled?: boolean;
   onPlaceOrder?: () => void;
   onBackToOrder?: () => void;
-  orderStatus?: string;
-  cancelling?: boolean;
-  onCancelOrder?: () => void;
+  /** Each kitchen ticket in this dine-in session */
+  sessionOrders?: SessionOrderRef[];
+  cancellingOrderId?: string | null;
+  onCancelOrder?: (orderId: string) => void;
 }
 
 export default function CheckoutOrderSummary({
@@ -35,17 +39,26 @@ export default function CheckoutOrderSummary({
   placeOrderDisabled,
   onPlaceOrder,
   onBackToOrder,
-  orderStatus,
-  cancelling,
+  sessionOrders = [],
+  cancellingOrderId,
   onCancelOrder,
 }: CheckoutOrderSummaryProps) {
-  const canCancel = orderStatus === 'CONFIRMED' || orderStatus === 'PENDING';
-  const showCancel = mode === 'placed' && orderStatus !== 'CANCELLED' && orderStatus !== 'COMPLETED';
-  const cancelDisabled = !canCancel || !!cancelling;
-  const isSticky = mode === 'pre-order' || mode === 'add-items';
+  const location = useLocation();
+  const menuPath = storePaths(location.pathname).menu;
+  const [selectedItem, setSelectedItem] = useState<CheckoutSummaryItem | null>(null);
+  const selectedOrder = sessionOrders.find((order) => order.id === selectedItem?.orderId);
+  const canCancel =
+    !!selectedOrder && (selectedOrder.status === 'CONFIRMED' || selectedOrder.status === 'PENDING');
+  const isCancelling = !!selectedOrder && cancellingOrderId === selectedOrder.id;
+
+  useEffect(() => {
+    if (!selectedItem?.orderId) return;
+    const order = sessionOrders.find((entry) => entry.id === selectedItem.orderId);
+    if (order?.status === 'CANCELLED') setSelectedItem(null);
+  }, [sessionOrders, selectedItem?.orderId]);
 
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 ${isSticky ? 'sticky top-24' : ''}`}>
+    <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
 
       {mode === 'add-items' && (
@@ -53,23 +66,43 @@ export default function CheckoutOrderSummary({
       )}
 
       <div className="space-y-3 mb-4">
-        {items.map((item) => (
-          <div key={item.id} className="flex justify-between text-sm">
-            <div>
-              <span className="text-gray-400 mr-1">{item.quantity}x</span>
-              <span className="text-gray-700">{item.name}</span>
-              {item.isNew && (
-                <span className="ml-2 text-[10px] uppercase font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
-                  New
-                </span>
-              )}
-              {item.optionsLabel ? (
-                <p className="text-xs text-gray-400 ml-5">{item.optionsLabel}</p>
-              ) : null}
-            </div>
-            <span className="text-gray-900 font-medium">${item.lineTotal.toFixed(2)}</span>
-          </div>
-        ))}
+        {items.map((item) => {
+          const canOpen = !!item.orderId;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              disabled={!canOpen}
+              onClick={() => canOpen && setSelectedItem(item)}
+              className={`w-full flex justify-between text-left rounded-lg px-2 py-2 -mx-2 ${
+                canOpen ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-base text-gray-900 font-medium">{item.name}</span>
+                  {item.status ? (
+                    <span
+                      className={`text-xs uppercase font-semibold px-2 py-0.5 rounded ${orderStatusBadgeClass(item.status)}`}
+                    >
+                      {orderStatusLabel(item.status)}
+                    </span>
+                  ) : null}
+                  {item.isNew && (
+                    <span className="text-xs uppercase font-semibold text-primary-600 bg-primary-50 px-2 py-0.5 rounded">
+                      New
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">Qty {item.quantity}</p>
+                {item.optionsLabel ? (
+                  <p className="text-xs text-gray-400">{item.optionsLabel}</p>
+                ) : null}
+              </div>
+              <span className="text-base text-gray-900 font-medium shrink-0">${item.lineTotal.toFixed(2)}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="border-t border-gray-200 pt-3 space-y-2 text-sm">
@@ -106,11 +139,18 @@ export default function CheckoutOrderSummary({
               Back to your order
             </button>
           )}
+          {/* Cancel buttons commented out — cancel from the item details popup.
+          {showCancel && cancelTargets.map((order) => (
+            <button key={order.id} type="button" onClick={() => onCancelOrder?.(order.id)}>
+              Cancel Order
+            </button>
+          ))}
+          */}
         </div>
       ) : (
         <div className="mt-4 space-y-2">
           <Link
-            to="/menu"
+            to={menuPath}
             className="block w-full text-center bg-primary-600 text-white py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
           >
             Browse Menu / Add Items
@@ -119,21 +159,87 @@ export default function CheckoutOrderSummary({
           <Link to="/menu">Browse Menu</Link>
           <Link to="/menu">Add Items</Link>
           */}
-          {showCancel && (
-            <button
-              type="button"
-              disabled={cancelDisabled}
-              onClick={onCancelOrder}
-              title={
-                canCancel
-                  ? 'Cancel this order'
-                  : 'Cancel is only available while status is Confirmed'
-              }
-              className="w-full border-2 border-red-300 text-red-700 py-3 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              {cancelling ? 'Cancelling…' : 'Cancel Order'}
+          {/* Cancel buttons commented out — cancel from the item details popup.
+          {showCancel && cancelTargets.map((order) => (
+            <button key={order.id} type="button" onClick={() => onCancelOrder?.(order.id)}>
+              Cancel Order
             </button>
-          )}
+          ))}
+          */}
+        </div>
+      )}
+
+      {selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelectedItem(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full max-w-md bg-white rounded-xl shadow-xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Item details</p>
+                <h3 className="text-lg font-semibold text-gray-900 mt-1">{selectedItem.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-2 text-sm mb-5">
+              {selectedItem.status ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Status</span>
+                  <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${orderStatusBadgeClass(selectedItem.status)}`}>
+                    {orderStatusLabel(selectedItem.status)}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Quantity</span>
+                <span className="text-gray-900 font-medium">{selectedItem.quantity}</span>
+              </div>
+              {selectedItem.optionsLabel ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Options</span>
+                  <span className="text-gray-900 text-right">{selectedItem.optionsLabel}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Price</span>
+                <span className="text-gray-900 font-medium">${selectedItem.lineTotal.toFixed(2)}</span>
+              </div>
+              {selectedItem.orderNumber ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Order</span>
+                  <span className="text-gray-900 font-medium">#{selectedItem.orderNumber}</span>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedOrder && onCancelOrder ? (
+              <button
+                type="button"
+                disabled={!canCancel || isCancelling}
+                onClick={() => onCancelOrder(selectedOrder.id)}
+                title={
+                  canCancel
+                    ? `Cancel order #${selectedOrder.orderNumber}`
+                    : 'Cancel is only available while status is New or Confirmed'
+                }
+                className="w-full border-2 border-red-300 text-red-700 py-3 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
+                {isCancelling ? 'Cancelling…' : 'Cancel Order'}
+              </button>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

@@ -13,6 +13,7 @@ interface Order {
   scheduledAt: string | null;
   customer: { id: string; name: string; email: string } | null;
   location: { id: string; name: string };
+  table: { id: string; name: string } | null;
   _count: { items: number };
 }
 
@@ -123,6 +124,7 @@ export default function OrderList() {
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Order #</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Table</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
@@ -142,6 +144,9 @@ export default function OrderList() {
                           &#128339;
                         </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {order.table?.name || (order.orderType === 'DINE_IN' ? 'DINE IN' : '—')}
                     </td>
                     <td className="px-4 py-3">
                       {order.customer ? order.customer.name : <span className="text-gray-400">Guest</span>}

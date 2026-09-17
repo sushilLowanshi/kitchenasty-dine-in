@@ -13,6 +13,7 @@ import Register from './pages/Register.js';
 import Account from './pages/Account.js';
 import Menu from './pages/Menu.js';
 import Checkout from './pages/Checkout.js';
+import TableKiosk from './pages/TableKiosk.js';
 import OrderConfirmation from './pages/OrderConfirmation.js';
 import Reservations from './pages/Reservations.js';
 import Gallery from './pages/Gallery.js';
@@ -41,6 +42,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/reservations" element={<Reservations />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/checkout" element={<Checkout />} />
+            <Route path="/t/:kioskId" element={<TableKiosk />}>
+              <Route index element={<Menu />} />
+              <Route path="checkout" element={<Checkout />} />
+            </Route>
             <Route path="/order/:id" element={<OrderConfirmation />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
