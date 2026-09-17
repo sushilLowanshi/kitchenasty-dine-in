@@ -8,7 +8,7 @@ import { orderApi, loyaltyApi, locationApi, paymentApi } from '@/api/endpoints';
 import type { Order } from '@/api/types';
 import { formatCurrency } from '@/lib/formatters';
 import { TAX_RATE, DEFAULT_DELIVERY_FEE } from '@/lib/constants';
-import { getActiveOrderId, setActiveOrderId, clearActiveOrderId } from '@/lib/activeOrder';
+import { getActiveOrderIds, setActiveOrderId, addActiveOrderId, setActiveOrderIds, clearActiveOrderId } from '@/lib/activeOrder';
 import { useOrderSocket } from '@/hooks/useOrderSocket';
 import Button from '@/components/ui/Button';
 import TextInput from '@/components/ui/TextInput';
@@ -69,10 +69,23 @@ export default function CheckoutScreen() {
   // const loyaltyDiscount = loyaltyRedeem / 100;
 
   const [isBusy, setIsBusy] = useState(false);
-  const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
+  const [placedOrders, setPlacedOrders] = useState<Order[]>([]);
+  const placedOrder =
+    placedOrders.find((order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED') ??
+    placedOrders[0] ??
+    null;
   const [loadingActiveOrder, setLoadingActiveOrder] = useState(true);
   const [paying, setPaying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<{
+    name: string;
+    quantity: number;
+    subtotal: number;
+    status: string;
+    orderId: string;
+    orderNumber: string;
+    optionsLabel: string;
+  } | null>(null);
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [waitingForPayment, setWaitingForPayment] = useState(false);
@@ -127,25 +140,37 @@ export default function CheckoutScreen() {
   }, []);
 
   const loadActiveOrder = useCallback(async () => {
-    const activeId = await getActiveOrderId();
-    if (!activeId) {
-      setPlacedOrder(null);
+    const ids = await getActiveOrderIds();
+    if (ids.length === 0) {
+      setPlacedOrders([]);
       setLoadingActiveOrder(false);
       return;
     }
 
     try {
-      const res = await orderApi.getById(activeId);
-      const order = res.data;
-      if (!order || order.status === 'COMPLETED' || order.status === 'CANCELLED') {
+      const loaded = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const res = await orderApi.getById(id);
+            return res.data ?? null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const open = loaded.filter(
+        (order): order is Order => !!order && order.status !== 'COMPLETED' && order.status !== 'CANCELLED',
+      );
+      if (open.length === 0) {
         await clearActiveOrderId();
-        setPlacedOrder(null);
+        setPlacedOrders([]);
         return;
       }
-      setPlacedOrder(order);
+      await setActiveOrderIds(open.map((order) => order.id));
+      setPlacedOrders(open);
     } catch {
       await clearActiveOrderId();
-      setPlacedOrder(null);
+      setPlacedOrders([]);
     } finally {
       setLoadingActiveOrder(false);
     }
@@ -159,19 +184,20 @@ export default function CheckoutScreen() {
 
   const onStatusUpdate = useCallback(
     (data: { id: string; status: string }) => {
-      setPlacedOrder((prev) => (prev && prev.id === data.id ? { ...prev, status: data.status } : prev));
-      if (data.status === 'COMPLETED') {
-        completePaymentAndGoHome();
-      } else if (data.status === 'CANCELLED') {
-        clearActiveOrderId();
-        setOfflineModalOpen(false);
-        setWaitingForPayment(false);
-        setQrImage(null);
-        if (!cancelHandledRef.current) {
-          Alert.alert('Order cancelled');
+      setPlacedOrders((prev) => {
+        const next = prev.map((order) => (order.id === data.id ? { ...order, status: data.status } : order));
+        const stillOpen = next.filter((order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED');
+        setActiveOrderIds(stillOpen.map((order) => order.id));
+        if (data.status === 'COMPLETED' && stillOpen.length === 0) {
+          completePaymentAndGoHome();
+        } else if (data.status === 'CANCELLED') {
+          setWaitingForPayment(false);
+          setQrImage(null);
+          if (!cancelHandledRef.current) Alert.alert('Order cancelled');
+          cancelHandledRef.current = false;
         }
-        cancelHandledRef.current = false;
-      }
+        return next;
+      });
     },
     [completePaymentAndGoHome],
   );
@@ -179,8 +205,14 @@ export default function CheckoutScreen() {
   const onPaymentCompleted = useCallback(
     (data: { orderId: string; status: string }) => {
       if (data.status === 'COMPLETED') {
-        setPlacedOrder((prev) => (prev ? { ...prev, status: 'COMPLETED' } : prev));
-        completePaymentAndGoHome();
+        setPlacedOrders((prev) => {
+          const next = prev.map((order) =>
+            order.id === data.orderId ? { ...order, status: 'COMPLETED' } : order,
+          );
+          const stillOpen = next.filter((order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED');
+          if (stillOpen.length === 0) completePaymentAndGoHome();
+          return next;
+        });
       }
     },
     [completePaymentAndGoHome],
@@ -195,8 +227,14 @@ export default function CheckoutScreen() {
       try {
         const res = await paymentApi.getRazorpayStatus(paymentId);
         if (res.data?.status === 'COMPLETED') {
-          setPlacedOrder((prev) => (prev ? { ...prev, status: 'COMPLETED' } : prev));
-          completePaymentAndGoHome();
+          setPlacedOrders((prev) => {
+            const next = prev.map((order) =>
+              order.id === placedOrder?.id ? { ...order, status: 'COMPLETED' } : order,
+            );
+            const stillOpen = next.filter((order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED');
+            if (stillOpen.length === 0) completePaymentAndGoHome();
+            return next;
+          });
         }
       } catch {
         // ignore transient poll errors
@@ -242,9 +280,25 @@ export default function CheckoutScreen() {
       const orderItems = cartItemsToPayload(items);
 
       if (orderIsOpen && hasPendingCart && placedOrder) {
-        const res = await orderApi.addItems(placedOrder.id, orderItems);
+        const body: Record<string, unknown> = {
+          orderType: 'DINE_IN',
+          items: orderItems,
+        };
+        if (!user) {
+          const source = placedOrders[0] as Order & {
+            guestName?: string;
+            guestEmail?: string;
+            guestPhone?: string;
+          };
+          body.guestName = guestName || source?.guestName;
+          body.guestEmail = guestEmail || source?.guestEmail;
+          body.guestPhone = guestPhone || source?.guestPhone || undefined;
+        }
+        const res = await orderApi.place(body);
+        const created = res.data!;
         clearCart();
-        setPlacedOrder(res.data!);
+        await addActiveOrderId(created.id);
+        setPlacedOrders((prev) => [...prev, created]);
         setQrImage(null);
         setPaymentId(null);
         setWaitingForPayment(false);
@@ -283,7 +337,7 @@ export default function CheckoutScreen() {
       clearCart();
       const created = res.data!;
       await setActiveOrderId(created.id);
-      setPlacedOrder(created);
+      setPlacedOrders([created]);
       setQrImage(null);
       setPaymentId(null);
       setWaitingForPayment(false);
@@ -298,20 +352,27 @@ export default function CheckoutScreen() {
   }
 
   async function handlePayOnline() {
-    if (!placedOrder) return;
+    const targets = placedOrders.filter(
+      (order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED',
+    );
+    if (targets.length === 0) return;
     setPaying(true);
     setError('');
     setOfflineModalOpen(false);
     setWaitingForPayment(false);
     setQrImage(null);
     try {
-      const res = await paymentApi.createRazorpayQr(placedOrder.id);
+      const first = targets[0];
+      const res = await paymentApi.createRazorpayQr(first.id);
       const image = res.data?.qrImageDataUrl || res.data?.qrImageUrl || null;
       if (!image) throw new Error('QR image was not generated');
       setQrImage(image);
       setPaymentId(res.data!.paymentId);
       setRazorpayTestMode(!!res.data?.testMode);
       setWaitingForPayment(true);
+      if (targets.length > 1) {
+        Alert.alert('Scan QR to pay', `This QR is for #${first.orderNumber}. Each order is paid separately.`);
+      }
     } catch (err: any) {
       setError(err.message);
       setWaitingForPayment(false);
@@ -336,11 +397,16 @@ export default function CheckoutScreen() {
   }
 
   async function handlePayOffline() {
-    if (!placedOrder) return;
+    const targets = placedOrders.filter(
+      (order) => order.status !== 'COMPLETED' && order.status !== 'CANCELLED',
+    );
+    if (targets.length === 0) return;
     setPaying(true);
     setError('');
     try {
-      await paymentApi.requestOffline(placedOrder.id);
+      for (const order of targets) {
+        await paymentApi.requestOffline(order.id);
+      }
       setOfflineModalOpen(true);
     } catch (err: any) {
       setError(err.message);
@@ -349,20 +415,23 @@ export default function CheckoutScreen() {
     }
   }
 
-  async function handleCancelOrder() {
-    if (!placedOrder) return;
-    if (placedOrder.status !== 'CONFIRMED' && placedOrder.status !== 'PENDING') return;
+  async function handleCancelOrder(orderId: string) {
+    const target = placedOrders.find((order) => order.id === orderId);
+    if (!target) return;
+    if (target.status !== 'CONFIRMED' && target.status !== 'PENDING') return;
     setCancelling(true);
     setError('');
     try {
-      await orderApi.cancel(placedOrder.id);
+      await orderApi.cancel(target.id);
       cancelHandledRef.current = true;
-      setPlacedOrder((prev) => (prev ? { ...prev, status: 'CANCELLED' } : prev));
-      await clearActiveOrderId();
-      setOfflineModalOpen(false);
-      setQrImage(null);
-      setWaitingForPayment(false);
-      Alert.alert('Order cancelled');
+      setPlacedOrders((prev) => prev.map((order) => (order.id === target.id ? { ...order, status: 'CANCELLED' } : order)));
+      await setActiveOrderIds(
+        placedOrders
+          .filter((order) => order.id !== target.id && order.status !== 'COMPLETED' && order.status !== 'CANCELLED')
+          .map((order) => order.id),
+      );
+      setSelectedItem(null);
+      Alert.alert(`Order #${target.orderNumber} cancelled`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -370,17 +439,24 @@ export default function CheckoutScreen() {
     }
   }
 
-  const existingItems = placedOrder?.items ?? [];
+  const existingItems = placedOrders.flatMap((order) =>
+    order.items.map((item) => ({
+      ...item,
+      status: order.status,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      optionsLabel: (item.options || []).map((o) => o.value).filter(Boolean).join(', '),
+    })),
+  );
   const cartSubtotal = subtotal;
   const cartTax = cartSubtotal * TAX_RATE;
-  const summarySubtotal = placedOrder
-    ? placedOrder.subtotal + (hasPendingCart ? cartSubtotal : 0)
-    : cartSubtotal;
-  const summaryTax = placedOrder ? placedOrder.tax + (hasPendingCart ? cartTax : 0) : cartTax;
+  const billable = placedOrders.filter((order) => order.status !== 'CANCELLED');
+  const summarySubtotal = billable.reduce((sum, order) => sum + order.subtotal, 0) + (hasPendingCart ? cartSubtotal : 0);
+  const summaryTax = billable.reduce((sum, order) => sum + order.tax, 0) + (hasPendingCart ? cartTax : 0);
   const summaryTotal = summarySubtotal + summaryTax;
   const canPay = checkoutMode === 'placed' && orderIsOpen;
-  const canCancel = placedOrder?.status === 'CONFIRMED' || placedOrder?.status === 'PENDING';
-  const statusStep = STATUS_STEPS.findIndex((s) => s.key === placedOrder?.status);
+  const selectedCanCancel =
+    selectedItem?.status === 'CONFIRMED' || selectedItem?.status === 'PENDING';
 
   return (
     <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16 }}>
@@ -411,6 +487,58 @@ export default function CheckoutScreen() {
         </View>
       </Modal>
 
+      <Modal visible={!!selectedItem} transparent animationType="fade" onRequestClose={() => setSelectedItem(null)}>
+        <Pressable className="flex-1 bg-black/40 items-center justify-center p-6" onPress={() => setSelectedItem(null)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <Text className="text-xs font-semibold uppercase tracking-wide text-gray-400">Item details</Text>
+            <Text className="text-xl font-bold text-gray-900 mt-1 mb-4">{selectedItem?.name}</Text>
+            <View className="mb-2 flex-row justify-between">
+              <Text className="text-gray-500">Status</Text>
+              <Text className="text-gray-900 font-semibold">
+                {STATUS_STEPS.find((step) => step.key === selectedItem?.status)?.label ?? selectedItem?.status}
+              </Text>
+            </View>
+            <View className="mb-2 flex-row justify-between">
+              <Text className="text-gray-500">Quantity</Text>
+              <Text className="text-gray-900 font-semibold">{selectedItem?.quantity}</Text>
+            </View>
+            {selectedItem?.optionsLabel ? (
+              <View className="mb-2 flex-row justify-between">
+                <Text className="text-gray-500 mr-3">Options</Text>
+                <Text className="text-gray-900 flex-1 text-right">{selectedItem.optionsLabel}</Text>
+              </View>
+            ) : null}
+            <View className="mb-2 flex-row justify-between">
+              <Text className="text-gray-500">Price</Text>
+              <Text className="text-gray-900 font-semibold">{formatCurrency(selectedItem?.subtotal ?? 0)}</Text>
+            </View>
+            <View className="mb-5 flex-row justify-between">
+              <Text className="text-gray-500">Order</Text>
+              <Text className="text-gray-900 font-semibold">#{selectedItem?.orderNumber}</Text>
+            </View>
+            <Pressable
+              onPress={() => selectedItem && handleCancelOrder(selectedItem.orderId)}
+              disabled={!selectedCanCancel || cancelling}
+              className={`py-3.5 rounded-xl items-center border-2 border-red-300 mb-2 ${
+                !selectedCanCancel || cancelling ? 'opacity-40' : ''
+              }`}
+            >
+              <Text className="text-red-700 font-semibold">
+                {cancelling ? 'Cancelling…' : 'Cancel Order'}
+              </Text>
+            </Pressable>
+            {!selectedCanCancel ? (
+              <Text className="text-xs text-gray-400 text-center mb-2">
+                Cancel is only available while status is New or Confirmed
+              </Text>
+            ) : null}
+            <Pressable onPress={() => setSelectedItem(null)} className="py-2">
+              <Text className="text-center text-sm text-gray-500">Close</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {error ? (
         <View className="bg-red-50 p-4 rounded-xl mb-4">
           <Text className="text-red-700 text-sm">{error}</Text>
@@ -423,6 +551,7 @@ export default function CheckoutScreen() {
         </View>
       )}
 
+      {/* Order status tracker commented out — each item shows its own order status.
       {placedOrder ? (
         <View className="bg-white rounded-xl p-4 mb-4 border border-gray-100">
           <Text className="text-base font-semibold text-gray-900">Order Status</Text>
@@ -460,6 +589,7 @@ export default function CheckoutScreen() {
           Place order now. Pay Online with UPI QR anytime after placing (same as web).
         </Text>
       )}
+      */}
 
       {/* Order notes — commented out to match requested checkout UI
       <View className="bg-white rounded-xl p-4 mb-4 border border-gray-100">
@@ -495,37 +625,62 @@ export default function CheckoutScreen() {
         ) : null}
 
         {existingItems.map((item) => (
-          <View key={item.id} className="flex-row justify-between mb-2">
-            <View className="flex-1 pr-2">
-              <Text className="text-sm text-gray-700">
-                <Text className="text-gray-400">{item.quantity}x </Text>
-                {item.name}
-              </Text>
-              {item.options?.length ? (
-                <Text className="text-xs text-gray-400">{item.options.map((o) => o.value).join(', ')}</Text>
-              ) : null}
+          <Pressable
+            key={item.id}
+            onPress={() =>
+              setSelectedItem({
+                name: item.name,
+                quantity: item.quantity,
+                subtotal: item.subtotal,
+                status: item.status,
+                orderId: item.orderId,
+                orderNumber: item.orderNumber,
+                optionsLabel: item.optionsLabel,
+              })
+            }
+            className="mb-3"
+          >
+            <View className="flex-row justify-between items-start">
+              <View className="flex-1 pr-2">
+                <View className="flex-row items-center flex-wrap">
+                  <View className="bg-gray-100 rounded px-1.5 py-0.5 mr-2">
+                    <Text className="text-[10px] font-semibold uppercase text-gray-700">
+                      {STATUS_STEPS.find((step) => step.key === item.status)?.label ?? item.status}
+                    </Text>
+                  </View>
+                  <Text className="text-sm text-gray-900 font-medium">{item.name}</Text>
+                </View>
+                <Text className="text-xs text-gray-400 mt-0.5">Qty {item.quantity}</Text>
+                {item.optionsLabel ? (
+                  <Text className="text-xs text-gray-400">{item.optionsLabel}</Text>
+                ) : null}
+              </View>
+              <Text className="text-sm font-medium">{formatCurrency(item.subtotal)}</Text>
             </View>
-            <Text className="text-sm font-medium">{formatCurrency(item.subtotal)}</Text>
-          </View>
+          </Pressable>
         ))}
 
         {items.map((item) => {
           const optTotal = item.options.reduce((s, o) => s + o.priceModifier, 0);
           return (
-            <View key={item.id} className="flex-row justify-between mb-2">
-              <View className="flex-1 pr-2">
-                <Text className="text-sm text-gray-700">
-                  <Text className="text-gray-400">{item.quantity}x </Text>
-                  {item.name}
-                  {placedOrder ? (
-                    <Text className="text-primary-600 text-xs font-semibold">  NEW</Text>
+            <View key={item.id} className="mb-3">
+              <View className="flex-row justify-between items-start">
+                <View className="flex-1 pr-2">
+                  <View className="flex-row items-center flex-wrap">
+                    <Text className="text-sm text-gray-900 font-medium">{item.name}</Text>
+                    {placedOrders.length > 0 ? (
+                      <View className="bg-orange-50 rounded px-1.5 py-0.5 ml-2">
+                        <Text className="text-[10px] font-semibold uppercase text-primary-600">New</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text className="text-xs text-gray-400 mt-0.5">Qty {item.quantity}</Text>
+                  {item.options.length > 0 ? (
+                    <Text className="text-xs text-gray-400">{item.options.map((o) => o.valueName).join(', ')}</Text>
                   ) : null}
-                </Text>
-                {item.options.length > 0 ? (
-                  <Text className="text-xs text-gray-400">{item.options.map((o) => o.valueName).join(', ')}</Text>
-                ) : null}
+                </View>
+                <Text className="text-sm font-medium">{formatCurrency((item.price + optTotal) * item.quantity)}</Text>
               </View>
-              <Text className="text-sm font-medium">{formatCurrency((item.price + optTotal) * item.quantity)}</Text>
             </View>
           );
         })}
@@ -579,21 +734,15 @@ export default function CheckoutScreen() {
               title="Browse Menu / Add Items"
               onPress={() => router.push('/(tabs)/menu')}
             />
+            {/* Cancel Order button commented out — cancel from the item details popup.
             {placedOrder &&
             placedOrder.status !== 'CANCELLED' &&
             placedOrder.status !== 'COMPLETED' ? (
-              <Pressable
-                onPress={handleCancelOrder}
-                disabled={!canCancel || cancelling}
-                className={`py-3.5 rounded-xl items-center border-2 border-red-300 ${
-                  !canCancel || cancelling ? 'opacity-40' : ''
-                }`}
-              >
-                <Text className="text-red-700 font-semibold">
-                  {cancelling ? 'Cancelling…' : 'Cancel Order'}
-                </Text>
+              <Pressable onPress={() => handleCancelOrder(placedOrder.id)}>
+                <Text>{cancelling ? 'Cancelling…' : 'Cancel Order'}</Text>
               </Pressable>
             ) : null}
+            */}
           </View>
         )}
       </View>
@@ -645,7 +794,7 @@ export default function CheckoutScreen() {
             </View>
           ) : (
             <Text className="text-xs text-gray-500 text-center mt-3">
-              Pay Online shows a Razorpay UPI QR only (cards / netbanking removed).
+              Pay Online shows a Razorpay UPI QR only.
             </Text>
           )}
         </View>

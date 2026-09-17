@@ -3,6 +3,7 @@ interface CheckoutPaymentProps {
   qrImage: string | null;
   waitingForPayment: boolean;
   testMode?: boolean;
+  caption?: string;
   onPayOnline: () => void;
   onPayOffline: () => void;
   onSimulateTestPay?: () => void;
@@ -13,13 +14,15 @@ export default function CheckoutPayment({
   qrImage,
   waitingForPayment,
   testMode,
+  caption,
   onPayOnline,
   onPayOffline,
   onSimulateTestPay,
 }: CheckoutPaymentProps) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-24 space-y-3">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 w-full space-y-3">
       <h2 className="text-lg font-semibold text-gray-900 mb-2">Payment</h2>
+      {caption ? <p className="text-xs text-gray-500 -mt-1 mb-2">{caption}</p> : null}
       <button
         type="button"
         disabled={paying || waitingForPayment}
@@ -70,7 +73,7 @@ export default function CheckoutPayment({
 
       {!qrImage && (
         <p className="text-xs text-gray-500 text-center pt-1">
-          Pay Online shows a Razorpay UPI QR only (cards / netbanking removed).
+          Pay Online shows a Razorpay UPI QR only.
         </p>
       )}
     </div>

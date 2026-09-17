@@ -107,6 +107,7 @@ export function emitNewOrder(order: {
   orderNumber: string;
   status: string;
   orderType: string;
+  table?: { id: string; name: string } | null;
 }): void {
   if (!io) return;
   io.to('kitchen').emit('order:new', order);
