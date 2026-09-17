@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApi } from '../hooks/useApi.js';
 import { apiUrl } from '../lib/apiBase.js';
 import { getActiveOrderId } from '../lib/activeOrder.js';
+import { storePaths } from '../lib/kioskPath.js';
 import { useCart } from '../context/CartContext.js';
 import MenuItemModal from '../components/MenuItemModal.js';
 
@@ -38,6 +39,8 @@ interface MenuResponse {
 
 export default function Menu() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const paths = storePaths(location.pathname);
   const { clear } = useCart();
   const activeOrderId = getActiveOrderId();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -111,7 +114,7 @@ export default function Menu() {
         <p className="mt-2 text-gray-600">{t('home.heroDescription').split('.')[0]}.</p>
         {activeOrderId ? (
           <Link
-            to="/checkout"
+            to={paths.checkout}
             onClick={() => clear()}
             className="inline-block mt-4 border-2 border-gray-300 text-gray-800 px-5 py-2.5 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
           >

@@ -396,6 +396,11 @@ model Order {
   reviews             Review[]
   loyaltyTransactions LoyaltyTransaction[]
 
+  // Optional physical table for kiosk dine-in. Null for delivery, pickup, and existing orders.
+  tableId String?
+  table   Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  @@index([tableId])
   @@map("orders")
 }
 
@@ -483,9 +488,24 @@ model Table {
   isActive   Boolean @default(true)
 
   reservations Reservation[]
+  // Optional tablet lock. Does not change reservation fields or availability.
+  kiosk        TableKiosk?
+  orders       Order[]
 
   @@unique([locationId, name])
   @@map("tables")
+}
+
+// One dedicated tablet/screen per physical table. Separate from reservations.
+model TableKiosk {
+  id        String   @id @default(cuid())
+  tableId   String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@map("table_kiosks")
 }
 
 model Reservation {

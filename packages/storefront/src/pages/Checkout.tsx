@@ -1,13 +1,15 @@
 ﻿import { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import { useCart } from '../context/CartContext.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
 import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
-import { getActiveOrderId, setActiveOrderId, clearActiveOrderId } from '../lib/activeOrder.js';
-import CheckoutOrderStatus from '../components/checkout/CheckoutOrderStatus.js';
+import { kioskIdFromPath, storePaths } from '../lib/kioskPath.js';
+import { getActiveOrderIds, setActiveOrderId, setActiveOrderIds, addActiveOrderId, removeActiveOrderId, clearActiveOrderId } from '../lib/activeOrder.js';
+// Order status tracker is shown on each item instead of a single checkout banner.
+// import CheckoutOrderStatus from '../components/checkout/CheckoutOrderStatus.js';
 import CheckoutOrderSummary from '../components/checkout/CheckoutOrderSummary.js';
 import CheckoutPayment from '../components/checkout/CheckoutPayment.js';
 import CheckoutOfflineModal from '../components/checkout/CheckoutOfflineModal.js';
@@ -19,6 +21,18 @@ const PAYMENT_SUCCESS_MESSAGE = 'Thank you — please visit again.';
 
 // type OrderType = 'delivery' | 'pickup';
 // type PaymentMethod = 'cash' | 'stripe' | 'paypal';
+
+interface PayTicket {
+  orderId: string;
+  orderNumber: string;
+  paymentId: string;
+  image: string;
+  testMode: boolean;
+}
+
+function isOpenStatus(status: string) {
+  return status !== 'COMPLETED' && status !== 'CANCELLED';
+}
 
 const TAX_RATE = 0.08;
 
@@ -32,6 +46,9 @@ function mapApiOrder(data: Record<string, unknown>): PlacedOrder {
     tax: data.tax as number,
     total: data.total as number,
     items,
+    guestName: data.guestName as string | undefined,
+    guestEmail: data.guestEmail as string | undefined,
+    guestPhone: data.guestPhone as string | undefined,
   };
 }
 
@@ -54,6 +71,9 @@ export default function Checkout() {
   const { items, subtotal, clear } = useCart();
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const paths = storePaths(location.pathname);
+  const kioskId = kioskIdFromPath(location.pathname);
   const { showToast } = useToast();
 
   const [comment, setComment] = useState('');
@@ -79,31 +99,39 @@ export default function Checkout() {
   // const [loyaltyRedeem, setLoyaltyRedeem] = useState(0);
   // const loyaltyDiscount = loyaltyRedeem / 100;
 
-  const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
-  const [loadingActiveOrder, setLoadingActiveOrder] = useState(() => !!getActiveOrderId());
+  const [placedOrders, setPlacedOrders] = useState<PlacedOrder[]>([]);
+  const [loadingActiveOrder, setLoadingActiveOrder] = useState(() => getActiveOrderIds().length > 0);
   const [paying, setPaying] = useState(false);
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [paymentId, setPaymentId] = useState<string | null>(null);
   const [waitingForPayment, setWaitingForPayment] = useState(false);
-  const [razorpayTestMode, setRazorpayTestMode] = useState(false);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [paidOrderIds, setPaidOrderIds] = useState<string[]>([]);
+  const [payTickets, setPayTickets] = useState<PayTicket[]>([]);
+  const [payIndex, setPayIndex] = useState(0);
   const [paymentSuccessOpen, setPaymentSuccessOpen] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const [offlineModalOpen, setOfflineModalOpen] = useState(false);
   const paymentHandledRef = useRef(false);
   const cancelHandledRef = useRef(false);
+  const placedOrdersRef = useRef(placedOrders);
+  placedOrdersRef.current = placedOrders;
+
+  const activeTicket = payTickets[payIndex] ?? null;
+  const qrImage = activeTicket?.image ?? null;
+  const paymentId = activeTicket?.paymentId ?? null;
+  const razorpayTestMode = activeTicket?.testMode ?? false;
 
   useEffect(() => {
     paymentHandledRef.current = false;
     cancelHandledRef.current = false;
-  }, [placedOrder?.id]);
+  }, [placedOrders.map((order) => order.id).join(',')]);
 
   const completePaymentAndGoHome = useCallback(() => {
     if (paymentHandledRef.current) return;
     paymentHandledRef.current = true;
     clearActiveOrderId();
+    if (kioskId) clear();
     setOfflineModalOpen(false);
-    setQrImage(null);
-    setPaymentId(null);
+    setPayTickets([]);
+    setPayIndex(0);
     setWaitingForPayment(false);
     setPaymentSuccessOpen(true);
     showToast({
@@ -112,8 +140,8 @@ export default function Checkout() {
       message: PAYMENT_SUCCESS_MESSAGE,
       duration: 5000,
     });
-    window.setTimeout(() => navigate('/'), 3200);
-  }, [navigate, showToast]);
+    window.setTimeout(() => navigate(paths.home), 3200);
+  }, [navigate, showToast, kioskId, clear, paths.home]);
 
   // const tax = subtotal * TAX_RATE;
   // const total = subtotal + tax;
@@ -134,8 +162,8 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
-    const activeId = getActiveOrderId();
-    if (!activeId) {
+    const ids = getActiveOrderIds();
+    if (ids.length === 0) {
       setLoadingActiveOrder(false);
       return;
     }
@@ -143,56 +171,86 @@ export default function Checkout() {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    fetch(apiUrl(`/api/orders/${activeId}`), { headers })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.success) {
+    Promise.all(
+      ids.map((id) =>
+        fetch(apiUrl(`/api/orders/${id}`), { headers })
+          .then((res) => res.json())
+          .then((data) => (data.success ? mapApiOrder(data.data as Record<string, unknown>) : null))
+          .catch(() => null)
+      )
+    )
+      .then((loaded) => {
+        const orders = loaded.filter((order): order is PlacedOrder => !!order && isOpenStatus(order.status));
+        if (orders.length === 0) {
           clearActiveOrderId();
+          setPlacedOrders([]);
           return;
         }
-        const order = data.data as Record<string, unknown>;
-        if (['COMPLETED', 'CANCELLED'].includes(order.status as string)) {
-          clearActiveOrderId();
-          return;
-        }
-        setPlacedOrder(mapApiOrder(order));
+        setActiveOrderIds(orders.map((order) => order.id));
+        setPlacedOrders(orders);
       })
-      .catch(() => clearActiveOrderId())
       .finally(() => setLoadingActiveOrder(false));
   }, [token]);
 
-  useEffect(() => {
-    if (!placedOrder?.id) return;
-    const socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
-    socket.emit('join:order', placedOrder.id);
-    socket.on('order:statusUpdate', (data: { id: string; status: string }) => {
-      if (data.id === placedOrder.id) {
-        setPlacedOrder((prev) => (prev ? { ...prev, status: data.status } : prev));
-        if (data.status === 'COMPLETED') {
+  const sessionKey = placedOrders.map((order) => order.id).join(',');
+
+  const markOrderPaid = useCallback(
+    (orderId: string) => {
+      setPaidOrderIds((prev) => {
+        const nextPaid = prev.includes(orderId) ? prev : [...prev, orderId];
+        const unpaid = placedOrdersRef.current.filter(
+          (order) => isOpenStatus(order.status) && !nextPaid.includes(order.id)
+        );
+        if (unpaid.length === 0) {
           completePaymentAndGoHome();
-        } else if (data.status === 'CANCELLED') {
-          clearActiveOrderId();
-          setOfflineModalOpen(false);
+        }
+        return nextPaid;
+      });
+      setPayIndex((index) => {
+        if (payTickets[index]?.orderId !== orderId) return index;
+        return Math.min(index + 1, payTickets.length);
+      });
+    },
+    [completePaymentAndGoHome, payTickets]
+  );
+
+  useEffect(() => {
+    if (!sessionKey) return;
+    const ids = sessionKey.split(',');
+    const socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
+    ids.forEach((id) => socket.emit('join:order', id));
+
+    socket.on('order:statusUpdate', (data: { id: string; status: string }) => {
+      if (!ids.includes(data.id)) return;
+      setPlacedOrders((prev) => {
+        const next = prev.map((order) => (order.id === data.id ? { ...order, status: data.status } : order));
+        const stillOpen = next.filter((order) => isOpenStatus(order.status));
+        setActiveOrderIds(stillOpen.map((order) => order.id));
+        if (data.status === 'CANCELLED') {
           setWaitingForPayment(false);
-          setQrImage(null);
+          setPayTickets([]);
           if (!cancelHandledRef.current) {
             showToast({ type: 'info', title: 'Order cancelled' });
           }
           cancelHandledRef.current = false;
+        } else if (stillOpen.length === 0 && next.some((order) => order.status === 'COMPLETED')) {
+          completePaymentAndGoHome();
         }
-      }
+        return next;
+      });
     });
+
     socket.on('payment:completed', (data: { orderId: string; status: string }) => {
-      if (data.orderId === placedOrder.id && data.status === 'COMPLETED') {
-        setPlacedOrder((prev) => (prev ? { ...prev, status: 'COMPLETED' } : prev));
-        completePaymentAndGoHome();
+      if (ids.includes(data.orderId) && data.status === 'COMPLETED') {
+        markOrderPaid(data.orderId);
       }
     });
+
     return () => {
-      socket.emit('leave:order', placedOrder.id);
+      ids.forEach((id) => socket.emit('leave:order', id));
       socket.disconnect();
     };
-  }, [placedOrder?.id, completePaymentAndGoHome, showToast]);
+  }, [sessionKey, completePaymentAndGoHome, showToast, markOrderPaid]);
 
   // Poll Razorpay payment status while waiting (demo auto-complete + live webhook backup)
   useEffect(() => {
@@ -205,9 +263,8 @@ export default function Checkout() {
       try {
         const res = await fetch(apiUrl(`/api/payments/razorpay/status/${paymentId}`), { headers });
         const data = await res.json();
-        if (data.success && data.data?.status === 'COMPLETED') {
-          setPlacedOrder((prev) => (prev ? { ...prev, status: 'COMPLETED' } : prev));
-          completePaymentAndGoHome();
+        if (data.success && data.data?.status === 'COMPLETED' && activeTicket) {
+          markOrderPaid(activeTicket.orderId);
         }
       } catch {
         // ignore transient poll errors
@@ -217,12 +274,13 @@ export default function Checkout() {
     poll();
     const interval = window.setInterval(poll, 2000);
     return () => window.clearInterval(interval);
-  }, [paymentId, waitingForPayment, token, completePaymentAndGoHome]);
+  }, [paymentId, waitingForPayment, token, activeTicket, markOrderPaid]);
 
   // useEffect(() => { fetch loyalty ... }, [token]);
 
   const hasPendingCart = items.length > 0;
-  const checkoutMode = placedOrder
+  const openOrders = placedOrders.filter((order) => isOpenStatus(order.status));
+  const checkoutMode = placedOrders.length > 0
     ? hasPendingCart
       ? 'add-items'
       : 'placed'
@@ -236,12 +294,12 @@ export default function Checkout() {
     );
   }
 
-  if (!hasPendingCart && !placedOrder) {
+  if (!hasPendingCart && placedOrders.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
         <h1 className="text-2xl font-bold text-gray-900 mb-4">{t('checkout.emptyCart')}</h1>
         <Link
-          to="/menu"
+          to={paths.menu}
           className="inline-block bg-primary-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors"
         >
           {t('checkout.browseMenu')}
@@ -260,20 +318,34 @@ export default function Checkout() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      if (placedOrder && hasPendingCart) {
-        const res = await fetch(apiUrl(`/api/orders/${placedOrder.id}/items`), {
+      if (openOrders.length > 0 && hasPendingCart) {
+        const source = openOrders[0];
+        const body: Record<string, unknown> = {
+          orderType: 'DINE_IN',
+          items: orderItems,
+        };
+        if (kioskId) body.kioskId = kioskId;
+        if (!user) {
+          body.guestName = guestName || source.guestName;
+          body.guestEmail = guestEmail || source.guestEmail;
+          body.guestPhone = guestPhone || source.guestPhone || undefined;
+        }
+
+        const res = await fetch(apiUrl('/api/orders'), {
           method: 'POST',
           headers,
-          body: JSON.stringify({ items: orderItems }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to add items to order');
 
+        const created = mapApiOrder(data.data as Record<string, unknown>);
         clear();
-        setPlacedOrder(mapApiOrder(data.data as Record<string, unknown>));
+        addActiveOrderId(created.id);
+        setPlacedOrders((prev) => [...prev, created]);
         showToast({ type: 'success', title: 'New items added to your order' });
-        setQrImage(null);
-        setPaymentId(null);
+        setPayTickets([]);
+        setPayIndex(0);
         setWaitingForPayment(false);
         return;
       }
@@ -283,6 +355,7 @@ export default function Checkout() {
         items: orderItems,
         comment: comment || undefined,
       };
+      if (kioskId) body.kioskId = kioskId;
 
       if (!user) {
         body.guestName = guestName;
@@ -301,10 +374,10 @@ export default function Checkout() {
       clear();
       const created = mapApiOrder(data.data as Record<string, unknown>);
       setActiveOrderId(created.id);
-      setPlacedOrder(created);
+      setPlacedOrders([created]);
       showToast({ type: 'success', title: 'Order placed successfully!' });
-      setQrImage(null);
-      setPaymentId(null);
+      setPayTickets([]);
+      setPayIndex(0);
       setWaitingForPayment(false);
     } catch (err: any) {
       setError(err.message || t('common.error'));
@@ -314,41 +387,52 @@ export default function Checkout() {
   }
 
   async function handlePayOnline() {
-    if (!placedOrder) return;
+    const targets = openOrders.filter((order) => !paidOrderIds.includes(order.id));
+    if (targets.length === 0) return;
     setPaying(true);
     setError('');
     setOfflineModalOpen(false);
     setWaitingForPayment(false);
-    setQrImage(null);
+    setPayTickets([]);
+    setPayIndex(0);
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      // UPI QR only (Razorpay QR / payment-link)
-      const res = await fetch(apiUrl('/api/payments/razorpay/create-qr'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ orderId: placedOrder.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create Razorpay QR');
+      const tickets: PayTicket[] = [];
+      for (const order of targets) {
+        const res = await fetch(apiUrl('/api/payments/razorpay/create-qr'), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ orderId: order.id }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to create QR for #${order.orderNumber}`);
+        const image = data.data.qrImageDataUrl || data.data.qrImageUrl || null;
+        if (!image) throw new Error(`QR image was not generated for #${order.orderNumber}`);
+        tickets.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          paymentId: data.data.paymentId,
+          image,
+          testMode: !!data.data.testMode,
+        });
+      }
 
-      const image = data.data.qrImageDataUrl || data.data.qrImageUrl || null;
-      if (!image) throw new Error('QR image was not generated');
-
-      setQrImage(image);
-      setPaymentId(data.data.paymentId);
-      setRazorpayTestMode(!!data.data.testMode);
+      setPayTickets(tickets);
+      setPayIndex(0);
       setWaitingForPayment(true);
       showToast({
         type: 'info',
-        title: 'Scan UPI QR to pay',
-        message: data.data.message || 'Use PhonePe / GPay / any UPI app.',
+        title: tickets.length > 1 ? `Scan QR for #${tickets[0].orderNumber}` : 'Scan UPI QR to pay',
+        message: tickets.length > 1
+          ? `Each order is paid separately. ${tickets.length} QR codes.`
+          : 'Use PhonePe / GPay / any UPI app.',
       });
     } catch (err: any) {
       setError(err.message);
       setWaitingForPayment(false);
-      setRazorpayTestMode(false);
+      setPayTickets([]);
       showToast({ type: 'error', title: 'Payment failed', message: err.message });
     } finally {
       setPaying(false);
@@ -356,7 +440,7 @@ export default function Checkout() {
   }
 
   async function handleSimulateTestPay() {
-    if (!placedOrder || !paymentId) return;
+    if (!activeTicket) return;
     setPaying(true);
     setError('');
     try {
@@ -365,7 +449,7 @@ export default function Checkout() {
       const res = await fetch(apiUrl('/api/payments/razorpay/simulate-test-pay'), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ orderId: placedOrder.id, paymentId }),
+        body: JSON.stringify({ orderId: activeTicket.orderId, paymentId: activeTicket.paymentId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Test simulate failed');
@@ -379,19 +463,22 @@ export default function Checkout() {
   }
 
   async function handlePayOffline() {
-    if (!placedOrder) return;
+    const targets = openOrders.filter((order) => !paidOrderIds.includes(order.id));
+    if (targets.length === 0) return;
     setPaying(true);
     setError('');
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(apiUrl('/api/payments/offline-request'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ orderId: placedOrder.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to notify staff');
+      for (const order of targets) {
+        const res = await fetch(apiUrl('/api/payments/offline-request'), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ orderId: order.id }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to notify staff for #${order.orderNumber}`);
+      }
       setOfflineModalOpen(true);
     } catch (err: any) {
       setError(err.message);
@@ -401,46 +488,58 @@ export default function Checkout() {
     }
   }
 
-  async function handleCancelOrder() {
-    if (!placedOrder) return;
-    if (placedOrder.status !== 'CONFIRMED' && placedOrder.status !== 'PENDING') return;
-    setCancelling(true);
+  async function handleCancelOrder(orderId: string) {
+    const target = placedOrders.find((order) => order.id === orderId);
+    if (!target) return;
+    if (target.status !== 'CONFIRMED' && target.status !== 'PENDING') return;
+    setCancellingOrderId(orderId);
     setError('');
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(apiUrl(`/api/orders/${placedOrder.id}/cancel`), {
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel`), {
         method: 'POST',
         headers,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to cancel order');
       cancelHandledRef.current = true;
-      setPlacedOrder((prev) => (prev ? { ...prev, status: 'CANCELLED' } : prev));
-      clearActiveOrderId();
-      setOfflineModalOpen(false);
-      showToast({ type: 'info', title: 'Order cancelled' });
-      setQrImage(null);
-      setWaitingForPayment(false);
+      setPlacedOrders((prev) => {
+        const next = prev.map((order) => (order.id === orderId ? { ...order, status: 'CANCELLED' } : order));
+        setActiveOrderIds(next.filter((order) => isOpenStatus(order.status)).map((order) => order.id));
+        return next;
+      });
+      removeActiveOrderId(orderId);
+      setPayTickets((tickets) => tickets.filter((ticket) => ticket.orderId !== orderId));
+      showToast({ type: 'info', title: `Order #${target.orderNumber} cancelled` });
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setCancelling(false);
+      setCancellingOrderId(null);
     }
   }
 
-  const existingSummaryItems: CheckoutSummaryItem[] = placedOrder
-    ? placedOrder.items.map((item) => ({
-        id: item.id || `existing-${item.name}-${item.quantity}`,
-        name: item.name,
-        quantity: item.quantity,
-        lineTotal: item.subtotal ?? ((item.unitPrice || item.price || 0) * item.quantity),
-        optionsLabel: (item.options || [])
-          .map((o) => o.valueName || o.value || '')
-          .filter(Boolean)
-          .join(', '),
-      }))
-    : [];
+  const sessionOrders = placedOrders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+  }));
+
+  const existingSummaryItems: CheckoutSummaryItem[] = placedOrders.flatMap((order) =>
+    order.items.map((item) => ({
+      id: item.id || `${order.id}-${item.name}-${item.quantity}`,
+      name: item.name,
+      quantity: item.quantity,
+      lineTotal: item.subtotal ?? ((item.unitPrice || item.price || 0) * item.quantity),
+      optionsLabel: (item.options || [])
+        .map((o) => o.valueName || o.value || '')
+        .filter(Boolean)
+        .join(', '),
+      status: order.status,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+    }))
+  );
 
   const newSummaryItems: CheckoutSummaryItem[] = items.map((item) => {
     const optionsTotal = item.options.reduce((s, o) => s + o.priceModifier, 0);
@@ -450,35 +549,34 @@ export default function Checkout() {
       quantity: item.quantity,
       lineTotal: (item.price + optionsTotal) * item.quantity,
       optionsLabel: item.options.map((o) => o.valueName).join(', '),
-      isNew: !!placedOrder,
+      isNew: openOrders.length > 0,
     };
   });
 
   const summaryItems: CheckoutSummaryItem[] =
     checkoutMode === 'add-items'
       ? [...existingSummaryItems, ...newSummaryItems]
-      : placedOrder
+      : openOrders.length > 0 || placedOrders.length > 0
         ? existingSummaryItems
         : newSummaryItems;
 
+  const billableOrders = placedOrders.filter((order) => order.status !== 'CANCELLED');
   const cartSubtotal = subtotal;
   const cartTax = cartSubtotal * TAX_RATE;
-  const summarySubtotal = placedOrder
-    ? placedOrder.subtotal + (hasPendingCart ? cartSubtotal : 0)
+  const placedSubtotal = billableOrders.reduce((sum, order) => sum + order.subtotal, 0);
+  const placedTax = billableOrders.reduce((sum, order) => sum + order.tax, 0);
+  const summarySubtotal = placedOrders.length > 0
+    ? placedSubtotal + (hasPendingCart ? cartSubtotal : 0)
     : cartSubtotal;
-  const summaryTax = placedOrder
-    ? placedOrder.tax + (hasPendingCart ? cartTax : 0)
+  const summaryTax = placedOrders.length > 0
+    ? placedTax + (hasPendingCart ? cartTax : 0)
     : cartTax;
   const summaryTotal = summarySubtotal + summaryTax;
 
-  const canPay =
-    !!placedOrder &&
-    !hasPendingCart &&
-    placedOrder.status !== 'COMPLETED' &&
-    placedOrder.status !== 'CANCELLED';
+  const canPay = openOrders.some((order) => !paidOrderIds.includes(order.id)) && !hasPendingCart;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">{t('checkout.title')}</h1>
 
       {isBusy && checkoutMode === 'pre-order' && (
@@ -501,13 +599,15 @@ export default function Checkout() {
 
       <PaymentSuccessModal open={paymentSuccessOpen} />
 
-      {placedOrder && (
-        <CheckoutOrderStatus orderNumber={placedOrder.orderNumber} status={placedOrder.status} />
+      {/* Order status tracker commented out — each item shows its own order status.
+      {placedOrders[0] && (
+        <CheckoutOrderStatus orderNumber={placedOrders[0].orderNumber} status={placedOrders[0].status} />
       )}
+      */}
 
       <form onSubmit={handleSubmit}>
         {checkoutMode === 'pre-order' ? (
-          <div className="max-w-2xl mx-auto w-full space-y-6">
+          <div className="w-full space-y-6">
             {!user && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
@@ -565,60 +665,64 @@ export default function Checkout() {
             />
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row gap-8">
-            <div className="flex-1 space-y-6">
-              {placedOrder && checkoutMode === 'placed' && (
-                <CheckoutOrderSummary
-                  title={t('checkout.orderSummary')}
-                  items={summaryItems}
-                  subtotal={summarySubtotal}
-                  tax={summaryTax}
-                  total={summaryTotal}
-                  subtotalLabel={t('checkout.subtotal')}
-                  taxLabel={t('checkout.tax')}
-                  totalLabel={t('checkout.total')}
-                  mode="placed"
-                  orderStatus={placedOrder.status}
-                  cancelling={cancelling}
-                  onCancelOrder={handleCancelOrder}
-                />
-              )}
-            </div>
-
-            <div className="lg:w-96 shrink-0">
-              {checkoutMode === 'add-items' ? (
-                <CheckoutOrderSummary
-                  title="Add to your order"
-                  items={summaryItems}
-                  subtotal={summarySubtotal}
-                  tax={summaryTax}
-                  total={summaryTotal}
-                  subtotalLabel={t('checkout.subtotal')}
-                  taxLabel={t('checkout.tax')}
-                  totalLabel={t('checkout.total')}
-                  mode="add-items"
-                  placeOrderDisabled={loading || isBusy}
-                  placeOrderLabel={
-                    loading
-                      ? t('checkout.processing')
-                      : `Add to Order — $${cartSubtotal.toFixed(2)} new`
-                  }
-                  onBackToOrder={() => {
-                    clear();
-                  }}
-                />
-              ) : canPay ? (
-                <CheckoutPayment
-                  paying={paying}
-                  qrImage={qrImage}
-                  waitingForPayment={waitingForPayment}
-                  testMode={razorpayTestMode}
-                  onPayOnline={handlePayOnline}
-                  onPayOffline={handlePayOffline}
-                  onSimulateTestPay={handleSimulateTestPay}
-                />
-              ) : null}
-            </div>
+          <div className="w-full space-y-6">
+            {checkoutMode === 'add-items' ? (
+              <CheckoutOrderSummary
+                title="Add to your order"
+                items={summaryItems}
+                subtotal={summarySubtotal}
+                tax={summaryTax}
+                total={summaryTotal}
+                subtotalLabel={t('checkout.subtotal')}
+                taxLabel={t('checkout.tax')}
+                totalLabel={t('checkout.total')}
+                mode="add-items"
+                sessionOrders={sessionOrders}
+                cancellingOrderId={cancellingOrderId}
+                onCancelOrder={handleCancelOrder}
+                placeOrderDisabled={loading || isBusy}
+                placeOrderLabel={
+                  loading
+                    ? t('checkout.processing')
+                    : `Add to Order — $${cartSubtotal.toFixed(2)} new`
+                }
+                onBackToOrder={() => {
+                  clear();
+                }}
+              />
+            ) : null}
+            {placedOrders.length > 0 && checkoutMode === 'placed' && (
+              <CheckoutOrderSummary
+                title={t('checkout.orderSummary')}
+                items={summaryItems}
+                subtotal={summarySubtotal}
+                tax={summaryTax}
+                total={summaryTotal}
+                subtotalLabel={t('checkout.subtotal')}
+                taxLabel={t('checkout.tax')}
+                totalLabel={t('checkout.total')}
+                mode="placed"
+                sessionOrders={sessionOrders}
+                cancellingOrderId={cancellingOrderId}
+                onCancelOrder={handleCancelOrder}
+              />
+            )}
+            {canPay ? (
+              <CheckoutPayment
+                paying={paying}
+                qrImage={qrImage}
+                waitingForPayment={waitingForPayment}
+                testMode={razorpayTestMode}
+                caption={
+                  payTickets.length > 1 && activeTicket
+                    ? `QR ${Math.min(payIndex + 1, payTickets.length)} of ${payTickets.length} · #${activeTicket.orderNumber}`
+                    : undefined
+                }
+                onPayOnline={handlePayOnline}
+                onPayOffline={handlePayOffline}
+                onSimulateTestPay={handleSimulateTestPay}
+              />
+            ) : null}
           </div>
         )}
       </form>

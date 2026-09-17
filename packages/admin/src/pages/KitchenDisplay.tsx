@@ -20,6 +20,7 @@ interface KitchenOrder {
   createdAt: string;
   scheduledAt: string | null;
   customer: { name: string } | null;
+  table: { id: string; name: string } | null;
   items: OrderItem[];
 }
 
@@ -200,6 +201,9 @@ export default function KitchenDisplay() {
                 {scheduledOrders.map((order) => (
                   <div key={order.id} className="bg-white rounded-lg border border-indigo-200 px-3 py-2 text-xs">
                     <span className="font-mono font-bold text-gray-900">#{order.orderNumber}</span>
+                    <span className="ml-2 font-semibold text-gray-800">
+                      {order.table?.name || (order.orderType === 'DINE_IN' ? 'DINE IN' : order.orderType)}
+                    </span>
                     <span className={`ml-2 px-1.5 py-0.5 rounded font-medium ${order.orderType === 'DELIVERY' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                       }`}>
                       {order.orderType}
@@ -244,6 +248,9 @@ export default function KitchenDisplay() {
                           <span className="font-mono text-sm font-bold text-gray-900">
                             #{order.orderNumber}
                           </span>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {order.table?.name || (order.orderType === 'DINE_IN' ? 'DINE IN' : order.orderType.replace(/_/g, ' '))}
+                          </p>
                           <span className={`ml-2 text-xs px-1.5 py-0.5 rounded font-medium ${order.orderType === 'DELIVERY'
                               ? 'bg-blue-100 text-blue-700'
                               : 'bg-green-100 text-green-700'
