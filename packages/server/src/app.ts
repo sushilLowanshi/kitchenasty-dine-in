@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes.js';
 import locationRoutes from './routes/location.routes.js';
@@ -36,11 +36,17 @@ import { metricsCollector } from './middleware/metricsCollector.js';
 // Initialize automation event listeners
 import './lib/events.js';
 
-// Always load packages/server/.env (works from monorepo root or package cwd)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-// dotenv.config(); // old: only looked in process.cwd()
+// Always load packages/server/.env (works from monorepo root or package cwd; CJS-safe)
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'packages/server/.env'),
+];
+for (const envPath of envCandidates) {
+  if (existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 const defaultAllowedOrigins = [
   'http://localhost:5173',

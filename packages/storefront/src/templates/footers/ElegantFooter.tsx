@@ -1,10 +1,13 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext.js';
+import { storePaths } from '../../lib/kioskPath.js';
 
 export default function ElegantFooter() {
   const { t } = useTranslation();
   const { settings } = useTheme();
+  const location = useLocation();
+  const paths = storePaths(location.pathname);
 
   return (
     <footer className="bg-gray-50 text-gray-600">
@@ -33,19 +36,36 @@ export default function ElegantFooter() {
           <div>
             <h3 className="text-gray-800 font-serif text-base mb-4 tracking-wide">{t('footer.quickLinks')}</h3>
             <ul className="space-y-2">
-              <li><Link to="/menu" className="hover:text-gray-900 transition-colors">{t('nav.menu')}</Link></li>
-              <li><Link to="/locations" className="hover:text-gray-900 transition-colors">{t('nav.locations')}</Link></li>
-              <li><Link to="/reservations" className="hover:text-gray-900 transition-colors">{t('nav.reservations')}</Link></li>
+              <li>
+                <Link to={paths.home} className="hover:text-gray-900 transition-colors">{t('nav.home')}</Link>
+              </li>
+              <li>
+                <Link to={paths.menu} className="hover:text-gray-900 transition-colors">{t('nav.menu')}</Link>
+              </li>
+              {/* Disabled for now — keeps table/customer flow from leaving kiosk
+              <li><Link to={paths.locations} className="hover:text-gray-900 transition-colors">{t('nav.locations')}</Link></li>
+              <li><Link to={paths.reservations} className="hover:text-gray-900 transition-colors">{t('nav.reservations')}</Link></li>
+              */}
+              <li><span className="text-gray-300 cursor-not-allowed">{t('nav.locations')}</span></li>
+              <li><span className="text-gray-300 cursor-not-allowed">{t('nav.reservations')}</span></li>
+              <li>
+                <Link to={paths.gallery} className="hover:text-gray-900 transition-colors">{t('nav.gallery')}</Link>
+              </li>
             </ul>
           </div>
 
-          {/* Account */}
+          {/* Account — login/signup disabled for dine-in guest ordering */}
           <div>
             <h3 className="text-gray-800 font-serif text-base mb-4 tracking-wide">{t('footer.account')}</h3>
             <ul className="space-y-2">
+              {/*
               <li><Link to="/login" className="hover:text-gray-900 transition-colors">{t('nav.login')}</Link></li>
               <li><Link to="/register" className="hover:text-gray-900 transition-colors">{t('footer.createAccount')}</Link></li>
               <li><Link to="/account" className="hover:text-gray-900 transition-colors">{t('nav.myAccount')}</Link></li>
+              */}
+              <li><span className="text-gray-300 cursor-not-allowed">{t('nav.login')}</span></li>
+              <li><span className="text-gray-300 cursor-not-allowed">{t('footer.createAccount')}</span></li>
+              <li><span className="text-gray-300 cursor-not-allowed">{t('nav.myAccount')}</span></li>
             </ul>
           </div>
 
@@ -53,8 +73,8 @@ export default function ElegantFooter() {
           <div>
             <h3 className="text-gray-800 font-serif text-base mb-4 tracking-wide">Legal</h3>
             <ul className="space-y-2">
-              <li><Link to="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link></li>
-              <li><Link to="/impressum" className="hover:text-gray-900 transition-colors">Impressum</Link></li>
+              <li><Link to={paths.privacy} className="hover:text-gray-900 transition-colors">Privacy Policy</Link></li>
+              <li><Link to={paths.impressum} className="hover:text-gray-900 transition-colors">Impressum</Link></li>
               <li>
                 <button
                   onClick={() => window.dispatchEvent(new Event('open-cookie-settings'))}

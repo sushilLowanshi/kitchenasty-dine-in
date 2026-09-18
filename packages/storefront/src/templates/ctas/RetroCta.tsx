@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function RetroCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-20 bg-amber-50 dark:bg-gray-900">
@@ -28,12 +28,12 @@ export default function RetroCta({ cta, t }: CtaProps) {
           <p className="text-lg text-amber-800/70 dark:text-amber-300/70 mb-10 max-w-lg mx-auto">
             {description}
           </p>
-          <Link
+          <KioskLink
             to={buttonLink}
             className="inline-block px-8 py-3 bg-amber-800 dark:bg-amber-600 text-amber-50 font-bold uppercase tracking-wider text-sm rounded-sm border-2 border-amber-900 dark:border-amber-500 hover:bg-amber-700 dark:hover:bg-amber-500 transition-colors shadow-[3px_3px_0_0_rgba(120,53,15,0.3)]"
           >
             {buttonText}
-          </Link>
+          </KioskLink>
 
           {/* Decorative bottom ornament */}
           <div className="flex items-center justify-center gap-3 mt-6">

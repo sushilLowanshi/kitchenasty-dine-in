@@ -156,8 +156,8 @@ export default function CheckoutOrderSummary({
             Browse Menu / Add Items
           </Link>
           {/*
-          <Link to="/menu">Browse Menu</Link>
-          <Link to="/menu">Add Items</Link>
+          <Link to={menuPath}>Browse Menu</Link>
+          <Link to={menuPath}>Add Items</Link>
           */}
           {/* Cancel buttons commented out — cancel from the item details popup.
           {showCancel && cancelTargets.map((order) => (

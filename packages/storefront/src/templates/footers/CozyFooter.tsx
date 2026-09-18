@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext.js';
 
@@ -32,19 +32,19 @@ export default function CozyFooter() {
             <h3 className="text-amber-900 font-semibold mb-4">{t('footer.quickLinks')}</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link to="/menu" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/menu" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('nav.menu')}
-                </Link>
+                </KioskLink>
               </li>
               <li>
-                <Link to="/locations" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/locations" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('nav.locations')}
-                </Link>
+                </KioskLink>
               </li>
               <li>
-                <Link to="/reservations" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/reservations" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('nav.reservations')}
-                </Link>
+                </KioskLink>
               </li>
             </ul>
           </div>
@@ -54,19 +54,19 @@ export default function CozyFooter() {
             <h3 className="text-amber-900 font-semibold mb-4">{t('footer.account')}</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link to="/login" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/login" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('nav.login')}
-                </Link>
+                </KioskLink>
               </li>
               <li>
-                <Link to="/register" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/register" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('footer.createAccount')}
-                </Link>
+                </KioskLink>
               </li>
               <li>
-                <Link to="/account" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/account" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   {t('nav.myAccount')}
-                </Link>
+                </KioskLink>
               </li>
             </ul>
           </div>
@@ -76,14 +76,14 @@ export default function CozyFooter() {
             <h3 className="text-amber-900 font-semibold mb-4">Legal</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link to="/privacy-policy" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/privacy-policy" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   Privacy Policy
-                </Link>
+                </KioskLink>
               </li>
               <li>
-                <Link to="/impressum" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
+                <KioskLink to="/impressum" className="hover:text-amber-950 transition-colors bg-amber-100 rounded-full px-3 py-1 inline-block">
                   Impressum
-                </Link>
+                </KioskLink>
               </li>
               <li>
                 <button

@@ -235,9 +235,15 @@ describe('Order API - Integration Tests', () => {
   // GET
   // ============================================================
   describe('GET /api/orders/:id', () => {
-    it('requires authentication', async () => {
+    it('allows guest access by order id', async () => {
+      mockedPrisma.order.findUnique.mockResolvedValue({
+        ...sampleOrder,
+        items: [{ id: 'oi-1', name: 'Pizza', quantity: 2, unitPrice: 14.99, subtotal: 29.98, options: [] }],
+      } as any);
+
       const res = await request(app).get('/api/orders/order-1');
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(200);
+      expect(res.body.data.orderNumber).toBe('KA-ABC-123');
     });
 
     it('returns order detail', async () => {

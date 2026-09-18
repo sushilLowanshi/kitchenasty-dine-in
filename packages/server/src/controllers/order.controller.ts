@@ -91,7 +91,7 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
   const customerId = (req as any).user?.type === 'customer' ? (req as any).user.id : null;
 
   // Guest checkout: require name + email if not authenticated
-  if (!customerId) {
+  if (!customerId && !kioskId) {
     if (!guestName || !guestEmail) {
       res.status(400).json({ success: false, error: 'Guest name and email are required for guest checkout' });
       return;
@@ -726,7 +726,10 @@ export async function cancelOrder(req: Request<{ id: string }>, res: Response): 
 
   const order = await prisma.order.findUnique({
     where: { id },
-    include: { customer: { select: { email: true } } },
+    include: {
+      customer: { select: { email: true } },
+      table: { select: { id: true, name: true } },
+    },
   });
   if (!order) {
     res.status(404).json({ success: false, error: 'Order not found' });
@@ -753,6 +756,7 @@ export async function cancelOrder(req: Request<{ id: string }>, res: Response): 
     data: { status: 'CANCELLED' },
     include: {
       items: { include: { options: true } },
+      table: { select: { id: true, name: true } },
     },
   });
 
@@ -764,6 +768,9 @@ export async function cancelOrder(req: Request<{ id: string }>, res: Response): 
     status: updated.status,
     orderType: updated.orderType,
     customerId: updated.customerId,
+    table: updated.table,
+    items: updated.items.map((item) => ({ name: item.name, quantity: item.quantity })),
+    cancelledByCustomer: true,
   });
 
   const recipientEmail = order.customer?.email || order.guestEmail;

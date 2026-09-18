@@ -9,6 +9,9 @@ const createReservationSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/),
   partySize: z.number().int().min(1).max(50),
   comment: z.string().optional(),
+  guestName: z.string().min(1).max(120).optional(),
+  guestEmail: z.string().email().optional(),
+  tableId: z.string().optional(),
 });
 
 const updateReservationSchema = z.object({
@@ -27,12 +30,26 @@ export async function createReservation(req: Request, res: Response): Promise<vo
     return;
   }
 
-  const { locationId, date, time, partySize, comment } = parsed.data;
-  const customerId = (req as any).user?.id;
+  const { locationId, date, time, partySize, comment, guestName, guestEmail, tableId } = parsed.data;
+  const authUser = req.user;
+  let customerId = authUser?.type === 'customer' ? authUser.id : null;
 
+  // Guest / table-screen booking — create or reuse a guest customer (no login)
   if (!customerId) {
-    res.status(401).json({ success: false, error: 'Authentication required for reservations' });
-    return;
+    const name = (guestName || 'Guest').trim();
+    const email = (guestEmail || `guest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@dinein.local`).trim().toLowerCase();
+    const existing = await prisma.customer.findUnique({ where: { email } });
+    if (existing) {
+      customerId = existing.id;
+      if (name && existing.name !== name) {
+        await prisma.customer.update({ where: { id: existing.id }, data: { name } }).catch(() => {});
+      }
+    } else {
+      const guest = await prisma.customer.create({
+        data: { email, name, isGuest: true },
+      });
+      customerId = guest.id;
+    }
   }
 
   // Verify location exists and is active
@@ -42,10 +59,21 @@ export async function createReservation(req: Request, res: Response): Promise<vo
     return;
   }
 
+  let resolvedTableId: string | undefined;
+  if (tableId) {
+    const table = await prisma.table.findUnique({ where: { id: tableId } });
+    if (!table || table.locationId !== locationId) {
+      res.status(400).json({ success: false, error: 'Invalid table for this location' });
+      return;
+    }
+    resolvedTableId = table.id;
+  }
+
   const reservation = await prisma.reservation.create({
     data: {
       customerId,
       locationId,
+      tableId: resolvedTableId,
       date: new Date(date),
       time,
       partySize,

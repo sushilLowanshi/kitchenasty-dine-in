@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function VibrantCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-24 bg-gradient-to-br from-primary-600 via-primary-500 to-secondary-500">
@@ -20,12 +20,12 @@ export default function VibrantCta({ cta, t }: CtaProps) {
         <p className="text-lg text-white/80 mb-10 max-w-xl mx-auto">
           {description}
         </p>
-        <Link
+        <KioskLink
           to={buttonLink}
           className="inline-block px-10 py-4 bg-white text-primary-700 font-semibold rounded-lg hover:bg-white/90 transition-colors shadow-lg"
         >
           {buttonText}
-        </Link>
+        </KioskLink>
       </div>
     </section>
   );
