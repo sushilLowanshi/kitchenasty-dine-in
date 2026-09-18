@@ -1,40 +1,42 @@
 import { Suspense, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../context/AuthContext.js';
 import { useCart } from '../context/CartContext.js';
 import { useTheme } from '../context/ThemeContext.js';
+import { useKiosk } from '../context/KioskContext.js';
 import LanguageSwitcher from './LanguageSwitcher.js';
 import { headerVariants } from '../templates/headers/index.js';
+import { isStorePathActive, storePaths } from '../lib/kioskPath.js';
 import type { TemplateId } from '../templates/index.js';
 
 function ClassicHeader() {
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
   const { itemCount, setIsOpen: openCart } = useCart();
   const { settings } = useTheme();
+  const { tableName } = useKiosk();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const paths = storePaths(location.pathname);
 
   const navLinks = [
-    { to: '/', label: t('nav.home') },
-    { to: '/locations', label: t('nav.locations') },
-    { to: '/menu', label: t('nav.menu') },
-    { to: '/gallery', label: t('nav.gallery') },
-    { to: '/reservations', label: t('nav.reservations') },
+    { id: 'home', to: paths.home, label: t('nav.home') },
+    // Locations commented out for dine-in table screen
+    // { id: 'locations', to: paths.locations, label: t('nav.locations') },
+    { id: 'menu', to: paths.menu, label: t('nav.menu') },
+    { id: 'gallery', to: paths.gallery, label: t('nav.gallery') },
+    { id: 'reservations', to: paths.reservations, label: t('nav.reservations') },
   ];
 
   function isActive(path: string) {
-    if (path === '/') return location.pathname === '/';
-    return location.pathname.startsWith(path);
+    return isStorePathActive(location.pathname, path, paths.home);
   }
 
   return (
     <header className="bg-white dark:bg-gray-900 shadow-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
+          {/* Logo + table name */}
+          <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
               <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-lg object-cover" />
             ) : (
@@ -43,13 +45,18 @@ function ClassicHeader() {
               </div>
             )}
             <span className="text-xl font-bold text-gray-900 dark:text-white">{settings.siteName}</span>
+            {tableName && (
+              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">
+                {tableName}
+              </span>
+            )}
           </Link>
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => (
               <Link
-                key={link.to}
+                key={link.id}
                 to={link.to}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive(link.to)
@@ -62,7 +69,7 @@ function ClassicHeader() {
             ))}
           </nav>
 
-          {/* Desktop auth + cart + language */}
+          {/* Desktop cart + language (customer auth commented out) */}
           <div className="hidden md:flex items-center gap-3">
             <LanguageSwitcher />
             <button
@@ -79,37 +86,19 @@ function ClassicHeader() {
                 </span>
               )}
             </button>
-            {user ? (
+            {/* Customer login / signup / logout — commented out for dine-in guest ordering
+            {SHOW_CUSTOMER_AUTH && (user ? (
               <>
-                <Link
-                  to="/account"
-                  className="text-sm text-gray-600 hover:text-gray-900"
-                >
-                  {user.name}
-                </Link>
-                <button
-                  onClick={logout}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  {t('nav.logout')}
-                </button>
+                <Link to="/account" className="text-sm text-gray-600 hover:text-gray-900">{user.name}</Link>
+                <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">{t('nav.logout')}</button>
               </>
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="text-sm text-gray-600 hover:text-gray-900"
-                >
-                  {t('nav.login')}
-                </Link>
-                <Link
-                  to="/register"
-                  className="text-sm bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-                >
-                  {t('nav.signUp')}
-                </Link>
+                <Link to="/login" className="text-sm text-gray-600 hover:text-gray-900">{t('nav.login')}</Link>
+                <Link to="/register" className="text-sm bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors">{t('nav.signUp')}</Link>
               </>
-            )}
+            ))}
+            */}
           </div>
 
           {/* Mobile cart + hamburger */}
@@ -153,7 +142,7 @@ function ClassicHeader() {
           <div className="px-4 py-3 space-y-1">
             {navLinks.map((link) => (
               <Link
-                key={link.to}
+                key={link.id}
                 to={link.to}
                 onClick={() => setMobileOpen(false)}
                 className={`block px-3 py-2 rounded-md text-base font-medium ${
@@ -168,42 +157,23 @@ function ClassicHeader() {
             <div className="px-3 py-2">
               <LanguageSwitcher />
             </div>
+            {/* Customer auth mobile — commented out for dine-in guest ordering
+            {SHOW_CUSTOMER_AUTH && (
             <div className="border-t border-gray-200 pt-3 mt-3">
               {user ? (
                 <>
-                  <Link
-                    to="/account"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-3 py-2 text-base font-medium text-gray-600 hover:text-gray-900"
-                  >
-                    {t('nav.myAccount')}
-                  </Link>
-                  <button
-                    onClick={() => { logout(); setMobileOpen(false); }}
-                    className="block w-full text-left px-3 py-2 text-base font-medium text-gray-500 hover:text-gray-700"
-                  >
-                    {t('nav.logout')}
-                  </button>
+                  <Link to="/account" onClick={() => setMobileOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-600 hover:text-gray-900">{t('nav.myAccount')}</Link>
+                  <button onClick={() => { logout(); setMobileOpen(false); }} className="block w-full text-left px-3 py-2 text-base font-medium text-gray-500 hover:text-gray-700">{t('nav.logout')}</button>
                 </>
               ) : (
                 <>
-                  <Link
-                    to="/login"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-3 py-2 text-base font-medium text-gray-600 hover:text-gray-900"
-                  >
-                    {t('nav.login')}
-                  </Link>
-                  <Link
-                    to="/register"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-3 py-2 text-base font-medium text-primary-600 hover:text-primary-700"
-                  >
-                    {t('nav.signUp')}
-                  </Link>
+                  <Link to="/login" onClick={() => setMobileOpen(false)} className="block px-3 py-2 text-base font-medium text-gray-600 hover:text-gray-900">{t('nav.login')}</Link>
+                  <Link to="/register" onClick={() => setMobileOpen(false)} className="block px-3 py-2 text-base font-medium text-primary-600 hover:text-primary-700">{t('nav.signUp')}</Link>
                 </>
               )}
             </div>
+            )}
+            */}
           </div>
         </div>
       )}

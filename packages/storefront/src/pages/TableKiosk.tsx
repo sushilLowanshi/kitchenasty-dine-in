@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useParams } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
 import { useCart } from '../context/CartContext.js';
+import { useKiosk } from '../context/KioskContext.js';
 
 interface PublicKiosk {
   id: string;
@@ -20,6 +21,7 @@ type ScreenState =
 export default function TableKiosk() {
   const { kioskId } = useParams();
   const { clear } = useCart();
+  const { setTableName } = useKiosk();
   const [screen, setScreen] = useState<ScreenState>({ status: 'loading' });
 
   useEffect(() => {
@@ -59,6 +61,15 @@ export default function TableKiosk() {
     };
   }, [kioskId]);
 
+  useEffect(() => {
+    if (screen.status === 'ready') {
+      setTableName(screen.tableName);
+    } else {
+      setTableName(null);
+    }
+    return () => setTableName(null);
+  }, [screen, setTableName]);
+
   if (screen.status === 'loading') {
     return (
       <div className="max-w-lg mx-auto px-4 py-24 text-center text-gray-500">
@@ -85,15 +96,5 @@ export default function TableKiosk() {
     );
   }
 
-  return (
-    <div>
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <p className="text-lg font-semibold text-gray-900">{screen.tableName}</p>
-          <p className="text-xs uppercase tracking-wide text-gray-400">Table screen</p>
-        </div>
-      </div>
-      <Outlet />
-    </div>
-  );
+  return <Outlet />;
 }

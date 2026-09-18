@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
-import { Link } from 'react-router-dom';
+import { useKiosk } from '../context/KioskContext.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { kioskIdFromPath } from '../lib/kioskPath.js';
 
 interface Location {
   id: string;
@@ -34,11 +36,40 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'bg-red-100 text-red-800',
 };
 
+function guestReservationStorageKey(scope: string): string {
+  return `kitchenasty_guest_reservations${scope ? `:${scope}` : ''}`;
+}
+
+function readGuestReservations(scope: string): Reservation[] {
+  try {
+    const raw = localStorage.getItem(guestReservationStorageKey(scope));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Reservation[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGuestReservations(scope: string, list: Reservation[]): void {
+  try {
+    localStorage.setItem(guestReservationStorageKey(scope), JSON.stringify(list.slice(0, 20)));
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function Reservations() {
   const { t } = useTranslation();
   const { user, token } = useAuth();
+  const { tableName } = useKiosk();
+  const location = useLocation();
+  const kioskId = kioskIdFromPath(location.pathname);
+  const guestScope = kioskId || 'web';
+
   const [locations, setLocations] = useState<Location[]>([]);
   const [myReservations, setMyReservations] = useState<Reservation[]>([]);
+  const [kioskTableId, setKioskTableId] = useState<string | null>(null);
 
   // Form state
   const [locationId, setLocationId] = useState('');
@@ -46,30 +77,60 @@ export default function Reservations() {
   const [time, setTime] = useState('');
   const [partySize, setPartySize] = useState(2);
   const [comment, setComment] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
+  // Prefill guest name from table screen
+  useEffect(() => {
+    if (!user && tableName && !guestName) {
+      setGuestName(`Guest (${tableName})`);
+    }
+  }, [user, tableName, guestName]);
+
   // Load locations
   useEffect(() => {
     fetch(apiUrl('/api/locations'))
       .then((res) => res.json())
-      .then((data) => setLocations(data.data || []))
+      .then((data) => {
+        const list = (data.data || []) as Location[];
+        setLocations(list);
+        if (list.length === 1 && !locationId) setLocationId(list[0].id);
+      })
       .catch(() => {});
   }, []);
 
-  // Load customer reservations
+  // Table screen: load table + location from kiosk
   useEffect(() => {
-    if (!token) return;
-    fetch(apiUrl('/api/reservations/my-reservations'), {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    if (!kioskId) return;
+    fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}`))
       .then((res) => res.json())
-      .then((data) => setMyReservations(data.data || []))
+      .then((body) => {
+        if (!body?.success || !body.data?.table) return;
+        const table = body.data.table as { id: string; name: string; locationId?: string };
+        setKioskTableId(table.id);
+        if (table.locationId) setLocationId(table.locationId);
+      })
       .catch(() => {});
-  }, [token, success]);
+  }, [kioskId]);
+
+  // Load customer reservations (logged-in) or guest session list
+  useEffect(() => {
+    if (token) {
+      fetch(apiUrl('/api/reservations/my-reservations'), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => setMyReservations(data.data || []))
+        .catch(() => {});
+      return;
+    }
+    setMyReservations(readGuestReservations(guestScope));
+  }, [token, success, guestScope]);
 
   // Load availability when location, date, and party size change
   useEffect(() => {
@@ -91,30 +152,59 @@ export default function Reservations() {
     setError('');
     setSuccess('');
 
-    if (!user) {
-      setError(t('reservations.loginRequired'));
-      return;
-    }
     if (!locationId || !date || !time) {
       setError(t('reservations.selectDateFirst'));
       return;
     }
 
+    if (!user && !guestName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
     setSubmitting(true);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const body: Record<string, unknown> = {
+        locationId,
+        date,
+        time,
+        partySize,
+        comment: comment || undefined,
+      };
+      if (!user) {
+        body.guestName = guestName.trim();
+        if (guestEmail.trim()) body.guestEmail = guestEmail.trim();
+      }
+      if (kioskTableId) body.tableId = kioskTableId;
+
       const res = await fetch(apiUrl('/api/reservations'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ locationId, date, time, partySize, comment: comment || undefined }),
+        headers,
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create reservation');
+      if (!res.ok) {
+        const errMsg = typeof data.error === 'string'
+          ? data.error
+          : Array.isArray(data.error)
+            ? 'Invalid reservation details'
+            : 'Failed to create reservation';
+        throw new Error(errMsg);
+      }
+
+      const created = data.data as Reservation;
       setSuccess('Reservation created!');
       setTime('');
       setComment('');
+
+      if (!token && created?.id) {
+        const next = [created, ...readGuestReservations(guestScope)];
+        writeGuestReservations(guestScope, next);
+        setMyReservations(next);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -133,13 +223,42 @@ export default function Reservations() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('reservations.bookTable')}</h2>
 
+          {/* Login banner commented out — guest booking enabled for dine-in
           {!user && (
             <div className="bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg mb-4">
               <Link to="/login" className="underline font-medium">{t('nav.login')}</Link> {t('reservations.loginRequired').toLowerCase()}
             </div>
           )}
+          */}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Guest contact — only when not logged in */}
+            {!user && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Your name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email (optional)</label>
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('reservations.location')}</label>
               <select
@@ -228,7 +347,7 @@ export default function Reservations() {
 
             <button
               type="submit"
-              disabled={submitting || !user}
+              disabled={submitting || !locationId || !date || !time}
               className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50"
             >
               {submitting ? t('reservations.booking') : t('reservations.bookNow')}
@@ -239,9 +358,7 @@ export default function Reservations() {
         {/* My Reservations */}
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('reservations.myReservations')}</h2>
-          {!user ? (
-            <p className="text-gray-500 text-sm">{t('reservations.loginRequired')}</p>
-          ) : myReservations.length === 0 ? (
+          {myReservations.length === 0 ? (
             <p className="text-gray-500 text-sm">{t('reservations.noReservations')}</p>
           ) : (
             <div className="space-y-3">
@@ -256,7 +373,7 @@ export default function Reservations() {
                     </span>
                   </div>
                   <div className="text-sm text-gray-500">
-                    {r.location.name} &middot; {r.partySize} {r.partySize === 1 ? t('reservations.guest', { count: 1 }) : t('reservations.guests', { count: r.partySize })}
+                    {r.location?.name} &middot; {r.partySize} {r.partySize === 1 ? t('reservations.guest', { count: 1 }) : t('reservations.guests', { count: r.partySize })}
                     {r.table && ` \u00B7 Table: ${r.table.name}`}
                   </div>
                   {r.comment && (

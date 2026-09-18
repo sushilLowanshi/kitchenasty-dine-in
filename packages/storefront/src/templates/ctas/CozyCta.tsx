@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function CozyCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-20 bg-amber-50 dark:bg-amber-950/20">
@@ -21,12 +21,12 @@ export default function CozyCta({ cta, t }: CtaProps) {
           <p className="text-lg text-gray-600 dark:text-gray-300 mb-10 max-w-lg mx-auto">
             {description}
           </p>
-          <Link
+          <KioskLink
             to={buttonLink}
             className="inline-block px-8 py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-full transition-colors shadow-md shadow-amber-200 dark:shadow-amber-900/30"
           >
             {buttonText}
-          </Link>
+          </KioskLink>
         </div>
       </div>
     </section>

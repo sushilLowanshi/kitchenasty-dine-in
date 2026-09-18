@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
 import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
 import { io } from 'socket.io-client';
 import PaymentSuccessModal from '../components/checkout/PaymentSuccessModal.js';
+import KioskLink from '../components/KioskLink.js';
+import { orderStatusPath, storePaths } from '../lib/kioskPath.js';
 
 interface OrderItem {
   id: string;
@@ -31,6 +33,8 @@ export default function Bill() {
   const { id } = useParams();
   const { token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const paths = storePaths(location.pathname);
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -48,8 +52,8 @@ export default function Bill() {
     setWaitingForPayment(false);
     setQrImage(null);
     setPaymentSuccessOpen(true);
-    window.setTimeout(() => navigate('/'), 3200);
-  }, [navigate]);
+    window.setTimeout(() => navigate(paths.home), 3200);
+  }, [navigate, paths.home]);
 
   useEffect(() => {
     const headers: Record<string, string> = {};
@@ -156,7 +160,7 @@ export default function Bill() {
     return (
       <div className="max-w-lg mx-auto py-16 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <Link to="/menu" className="text-primary-600 underline">Back to menu</Link>
+        <KioskLink to="/menu" className="text-primary-600 underline">Back to menu</KioskLink>
       </div>
     );
   }
@@ -168,9 +172,9 @@ export default function Bill() {
       <div className="max-w-lg mx-auto py-16 text-center px-4">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Payment complete</h1>
         <p className="text-gray-600 mb-6">Order #{order.orderNumber} is completed.</p>
-        <Link to={`/orders/${order.id}`} className="text-primary-600 font-medium underline">
+        <KioskLink to={orderStatusPath(location.pathname, order.id)} className="text-primary-600 font-medium underline">
           View order
-        </Link>
+        </KioskLink>
       </div>
     );
   }
@@ -269,9 +273,9 @@ export default function Bill() {
         </div>
       )}
 
-      <Link to={`/orders/${order.id}`} className="block text-center mt-6 text-sm text-primary-600 underline">
+      <KioskLink to={orderStatusPath(location.pathname, order.id)} className="block text-center mt-6 text-sm text-primary-600 underline">
         Back to order status
-      </Link>
+      </KioskLink>
     </div>
   );
 }

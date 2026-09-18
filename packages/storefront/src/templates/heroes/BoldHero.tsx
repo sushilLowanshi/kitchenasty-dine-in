@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface HeroProps {
   hero: { title?: string; subtitle?: string; ctaPrimaryText?: string; ctaPrimaryLink?: string; ctaSecondaryText?: string; ctaSecondaryLink?: string; backgroundImage?: string } | null;
@@ -21,18 +21,18 @@ export default function BoldHero({ hero, t }: HeroProps) {
             </p>
 
             <div className="flex flex-wrap gap-4">
-              <Link
+              <KioskLink
                 to={hero?.ctaPrimaryLink || '/menu'}
                 className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-8 py-4 font-bold text-lg uppercase tracking-wider hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
               >
                 {hero?.ctaPrimaryText || t('home.viewMenu')}
-              </Link>
-              <Link
+              </KioskLink>
+              <KioskLink
                 to={hero?.ctaSecondaryLink || '/locations'}
                 className="border-2 border-gray-900 dark:border-white text-gray-900 dark:text-white px-8 py-4 font-bold text-lg uppercase tracking-wider hover:bg-gray-900 hover:text-white dark:hover:bg-white dark:hover:text-gray-900 transition-colors"
               >
                 {hero?.ctaSecondaryText || t('home.findLocation')}
-              </Link>
+              </KioskLink>
             </div>
           </div>
 

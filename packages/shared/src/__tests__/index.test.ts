@@ -25,14 +25,16 @@ describe('Shared Constants', () => {
       expect(ORDER_STATUSES).toContain('confirmed');
       expect(ORDER_STATUSES).toContain('preparing');
       expect(ORDER_STATUSES).toContain('ready');
+      expect(ORDER_STATUSES).toContain('served');
+      expect(ORDER_STATUSES).toContain('completed');
       expect(ORDER_STATUSES).toContain('out_for_delivery');
       expect(ORDER_STATUSES).toContain('delivered');
       expect(ORDER_STATUSES).toContain('picked_up');
       expect(ORDER_STATUSES).toContain('cancelled');
     });
 
-    it('has exactly 8 statuses', () => {
-      expect(ORDER_STATUSES).toHaveLength(8);
+    it('has exactly 10 statuses', () => {
+      expect(ORDER_STATUSES).toHaveLength(10);
     });
 
     it('starts with pending and ends with cancelled', () => {
@@ -56,12 +58,12 @@ describe('Shared Constants', () => {
   });
 
   describe('ORDER_TYPES', () => {
-    it('contains delivery and pickup', () => {
-      expect(ORDER_TYPES).toEqual(['delivery', 'pickup']);
+    it('contains delivery, pickup, and dine_in', () => {
+      expect(ORDER_TYPES).toEqual(['delivery', 'pickup', 'dine_in']);
     });
 
-    it('has exactly 2 types', () => {
-      expect(ORDER_TYPES).toHaveLength(2);
+    it('has exactly 3 types', () => {
+      expect(ORDER_TYPES).toHaveLength(3);
     });
   });
 

@@ -16,6 +16,7 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | null>(null);
 
 let toastId = 0;
+const recentToastKeys = new Map<string, number>();
 
 const TOAST_STYLES: Record<ToastType, { ring: string; icon: string; iconBg: string }> = {
   success: {
@@ -67,6 +68,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const showToast = useCallback((toast: Omit<ToastItem, 'id'> & { duration?: number }) => {
+    const dedupeKey = `${toast.type}|${toast.title}|${toast.message ?? ''}`;
+    const now = Date.now();
+    if (recentToastKeys.has(dedupeKey)) {
+      const last = recentToastKeys.get(dedupeKey)!;
+      if (now - last < 2500) return;
+    }
+    recentToastKeys.set(dedupeKey, now);
+    window.setTimeout(() => {
+      if (recentToastKeys.get(dedupeKey) === now) recentToastKeys.delete(dedupeKey);
+    }, 2500);
+
     const id = String(++toastId);
     const duration = toast.duration ?? 4500;
     setToasts((prev) => [...prev, { id, type: toast.type, title: toast.title, message: toast.message }]);
