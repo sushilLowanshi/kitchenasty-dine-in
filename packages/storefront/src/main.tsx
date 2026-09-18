@@ -8,19 +8,19 @@ import { ThemeProvider } from './context/ThemeContext.js';
 import Layout from './components/Layout.js';
 import Home from './pages/Home.js';
 import Locations from './pages/Locations.js';
-import Login from './pages/Login.js';
-import Register from './pages/Register.js';
-import Account from './pages/Account.js';
+// import Login from './pages/Login.js';
+// import Register from './pages/Register.js';
+// import Account from './pages/Account.js';
 import Menu from './pages/Menu.js';
 import Checkout from './pages/Checkout.js';
 import TableKiosk from './pages/TableKiosk.js';
 import OrderConfirmation from './pages/OrderConfirmation.js';
 import Reservations from './pages/Reservations.js';
 import Gallery from './pages/Gallery.js';
-import OrderHistory from './pages/OrderHistory.js';
+// import OrderHistory from './pages/OrderHistory.js';
 import OrderStatus from './pages/OrderStatus.js';
 import Bill from './pages/Bill.js';
-import AuthCallback from './pages/AuthCallback.js';
+// import AuthCallback from './pages/AuthCallback.js';
 import PrivacyPolicy from './pages/PrivacyPolicy.js';
 import Impressum from './pages/Impressum.js';
 import NotFound from './pages/NotFound.js';
@@ -43,15 +43,27 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/t/:kioskId" element={<TableKiosk />}>
-              <Route index element={<Menu />} />
+              <Route index element={<Home />} />
+              <Route path="menu" element={<Menu />} />
+              <Route path="locations" element={<Locations />} />
+              <Route path="gallery" element={<Gallery />} />
+              <Route path="reservations" element={<Reservations />} />
               <Route path="checkout" element={<Checkout />} />
+              <Route path="order/:id" element={<OrderConfirmation />} />
+              <Route path="orders/:id" element={<OrderStatus />} />
+              <Route path="orders/:id/bill" element={<Bill />} />
+              <Route path="privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="impressum" element={<Impressum />} />
+              <Route path="*" element={<NotFound />} />
             </Route>
             <Route path="/order/:id" element={<OrderConfirmation />} />
+            {/* Customer login/signup commented out — guests order without an account
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/account" element={<Account />} />
             <Route path="/account/orders" element={<OrderHistory />} />
+            */}
             <Route path="/orders/:id" element={<OrderStatus />} />
             <Route path="/orders/:id/bill" element={<Bill />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />

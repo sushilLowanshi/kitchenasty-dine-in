@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext.js';
 
@@ -24,16 +24,16 @@ export default function MinimalFooter() {
           </div>
 
           <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs">
-            <Link to="/menu" className="hover:text-gray-900 transition-colors">{t('nav.menu')}</Link>
-            <Link to="/locations" className="hover:text-gray-900 transition-colors">{t('nav.locations')}</Link>
-            <Link to="/reservations" className="hover:text-gray-900 transition-colors">{t('nav.reservations')}</Link>
+            <KioskLink to="/menu" className="hover:text-gray-900 transition-colors">{t('nav.menu')}</KioskLink>
+            <KioskLink to="/locations" className="hover:text-gray-900 transition-colors">{t('nav.locations')}</KioskLink>
+            <KioskLink to="/reservations" className="hover:text-gray-900 transition-colors">{t('nav.reservations')}</KioskLink>
             <span className="text-gray-300">|</span>
-            <Link to="/login" className="hover:text-gray-900 transition-colors">{t('nav.login')}</Link>
-            <Link to="/register" className="hover:text-gray-900 transition-colors">{t('footer.createAccount')}</Link>
-            <Link to="/account" className="hover:text-gray-900 transition-colors">{t('nav.myAccount')}</Link>
+            <KioskLink to="/login" className="hover:text-gray-900 transition-colors">{t('nav.login')}</KioskLink>
+            <KioskLink to="/register" className="hover:text-gray-900 transition-colors">{t('footer.createAccount')}</KioskLink>
+            <KioskLink to="/account" className="hover:text-gray-900 transition-colors">{t('nav.myAccount')}</KioskLink>
             <span className="text-gray-300">|</span>
-            <Link to="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>
-            <Link to="/impressum" className="hover:text-gray-900 transition-colors">Impressum</Link>
+            <KioskLink to="/privacy-policy" className="hover:text-gray-900 transition-colors">Privacy Policy</KioskLink>
+            <KioskLink to="/impressum" className="hover:text-gray-900 transition-colors">Impressum</KioskLink>
             <button
               onClick={() => window.dispatchEvent(new Event('open-cookie-settings'))}
               className="hover:text-gray-900 transition-colors"

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext.js';
-import { apiUrl } from '../lib/apiBase.js';
+import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
 
 type Role = 'SUPER_ADMIN' | 'MANAGER' | 'STAFF';
 
@@ -93,12 +94,16 @@ const ROLE_LABELS: Record<Role, string> = {
   STAFF: 'Staff',
 };
 
+const recentStaffCancelToasts = new Set<string>();
+
 export default function AdminLayout({ children, onLogout }: { children: React.ReactNode; onLogout?: () => void }) {
   const location = useLocation();
   const { user, token } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cancelToast, setCancelToast] = useState<{ title: string; message: string } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredNav = user
     ? navItems.filter((item) => item.roles.includes(user.role))
@@ -136,10 +141,72 @@ export default function AdminLayout({ children, onLogout }: { children: React.Re
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  useEffect(() => {
+    const s: Socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
+    s.emit('join:kitchen');
+    s.on('order:cancelled', (data: {
+      id?: string;
+      orderNumber?: string;
+      table?: { name: string } | null;
+      items?: { name: string; quantity: number }[];
+    }) => {
+      const dedupeKey = data.id || data.orderNumber || '';
+      if (dedupeKey) {
+        if (recentStaffCancelToasts.has(dedupeKey)) return;
+        recentStaffCancelToasts.add(dedupeKey);
+        window.setTimeout(() => recentStaffCancelToasts.delete(dedupeKey), 4000);
+      }
+
+      const itemNames = (data.items ?? [])
+        .map((item) => (item.quantity > 1 ? `${item.quantity}x ${item.name}` : item.name))
+        .join(', ') || 'Order';
+      const tableLabel = data.table?.name || 'Unknown table';
+      setCancelToast({
+        title: 'Order cancelled by customer',
+        message: `${itemNames} · ${tableLabel}${data.orderNumber ? ` · #${data.orderNumber}` : ''}`,
+      });
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setCancelToast(null), 6000);
+    });
+    return () => {
+      s.emit('leave:kitchen');
+      s.disconnect();
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const isManagerPlus = user && (user.role === 'SUPER_ADMIN' || user.role === 'MANAGER');
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      {cancelToast && (
+        <div
+          className="fixed top-4 right-4 z-[100] max-w-sm w-full pointer-events-auto"
+          role="alert"
+        >
+          <div className="flex gap-3 rounded-xl border border-red-200 bg-white shadow-xl p-4">
+            <div className="shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0 pt-0.5">
+              <p className="font-semibold text-gray-900 text-sm leading-snug">{cancelToast.title}</p>
+              <p className="text-sm text-gray-600 mt-1 leading-relaxed">{cancelToast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCancelToast(null)}
+              className="shrink-0 text-gray-400 hover:text-gray-600 p-1 -mr-1 -mt-1"
+              aria-label="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-white flex flex-col" role="navigation" aria-label="Main navigation">
         <div className="px-6 py-4 border-b border-gray-700">

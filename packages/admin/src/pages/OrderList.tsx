@@ -86,9 +86,12 @@ export default function OrderList() {
           <option value="CONFIRMED">Confirmed</option>
           <option value="PREPARING">Preparing</option>
           <option value="READY">Ready</option>
+          <option value="SERVED">Served</option>
+          {/* Legacy delivery/pickup statuses
           <option value="OUT_FOR_DELIVERY">Out for Delivery</option>
           <option value="DELIVERED">Delivered</option>
           <option value="PICKED_UP">Picked Up</option>
+          */}
           <option value="CANCELLED">Cancelled</option>
         </select>
         <select
@@ -98,8 +101,11 @@ export default function OrderList() {
           aria-label="Filter by order type"
         >
           <option value="">All Types</option>
+          <option value="DINE_IN">Dine In</option>
+          {/* Legacy
           <option value="DELIVERY">Delivery</option>
           <option value="PICKUP">Pickup</option>
+          */}
         </select>
       </div>
 

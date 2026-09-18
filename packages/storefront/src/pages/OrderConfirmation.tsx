@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCart } from '../context/CartContext.js';
 import { apiUrl } from '../lib/apiBase.js';
+import KioskLink from '../components/KioskLink.js';
 
 type Order = {
   id: string;
@@ -110,18 +111,18 @@ export default function OrderConfirmation() {
       )}
 
       <div className="flex justify-center gap-4">
-        <Link
+        <KioskLink
           to="/menu"
           className="bg-primary-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors"
         >
           {t('orderConfirmation.orderMore')}
-        </Link>
-        <Link
+        </KioskLink>
+        <KioskLink
           to="/"
           className="border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors"
         >
           {t('notFound.backHome')}
-        </Link>
+        </KioskLink>
       </div>
     </div>
   );

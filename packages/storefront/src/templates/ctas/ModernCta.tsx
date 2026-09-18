@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function ModernCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="relative py-24 overflow-hidden bg-gray-100 dark:bg-gray-900">
@@ -35,12 +35,12 @@ export default function ModernCta({ cta, t }: CtaProps) {
         <p className="text-lg text-gray-600 dark:text-gray-400 mb-10 max-w-xl mx-auto">
           {description}
         </p>
-        <Link
+        <KioskLink
           to={buttonLink}
           className="inline-block px-10 py-4 bg-gradient-to-r from-primary-600 to-primary-500 text-white font-semibold rounded-lg shadow-lg shadow-primary-500/25 hover:shadow-primary-500/40 hover:scale-105 transition-all duration-200"
         >
           {buttonText}
-        </Link>
+        </KioskLink>
       </div>
     </section>
   );

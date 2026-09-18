@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../context/ThemeContext.js';
+import KioskLink from '../components/KioskLink.js';
 import { heroVariants } from '../templates/heroes/index.js';
 import { featureVariants } from '../templates/features/index.js';
 import { ctaVariants } from '../templates/ctas/index.js';
@@ -83,18 +83,18 @@ function ClassicHero({ hero, t }: { hero: HeroSection | null; t: (k: string) => 
             {hero?.subtitle || t('home.heroDescription')}
           </p>
           <div className="flex flex-wrap gap-4">
-            <Link
+            <KioskLink
               to={hero?.ctaPrimaryLink || '/menu'}
               className="bg-white text-primary-700 px-6 py-3 rounded-lg font-semibold hover:bg-primary-50 transition-colors"
             >
               {hero?.ctaPrimaryText || t('home.viewMenu')}
-            </Link>
-            <Link
+            </KioskLink>
+            <KioskLink
               to={hero?.ctaSecondaryLink || '/locations'}
               className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/10 transition-colors"
             >
               {hero?.ctaSecondaryText || t('home.findLocation')}
-            </Link>
+            </KioskLink>
           </div>
         </div>
       </div>
@@ -151,12 +151,12 @@ function ClassicCta({ cta, t }: { cta: CtaSection | null; t: (k: string) => stri
         <p className="text-gray-600 dark:text-gray-400 mb-6">
           {cta?.description || t('home.readyToOrderDesc')}
         </p>
-        <Link
-          to={cta?.buttonLink || '/register'}
+        <KioskLink
+          to={cta?.buttonLink || '/menu'}
           className="inline-block bg-primary-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
         >
           {cta?.buttonText || t('home.createAccount')}
-        </Link>
+        </KioskLink>
       </div>
     </section>
   );

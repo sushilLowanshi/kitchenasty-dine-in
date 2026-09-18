@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function SleekCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-24 bg-gray-950">
@@ -20,12 +20,12 @@ export default function SleekCta({ cta, t }: CtaProps) {
         <p className="text-lg text-gray-400 mb-12 max-w-xl mx-auto">
           {description}
         </p>
-        <Link
+        <KioskLink
           to={buttonLink}
           className="inline-block px-10 py-4 bg-primary-600 text-white font-semibold rounded-lg shadow-[0_0_20px_rgba(var(--color-primary-500),0.4)] hover:shadow-[0_0_30px_rgba(var(--color-primary-500),0.6)] hover:bg-primary-500 transition-all duration-300"
         >
           {buttonText}
-        </Link>
+        </KioskLink>
       </div>
     </section>
   );

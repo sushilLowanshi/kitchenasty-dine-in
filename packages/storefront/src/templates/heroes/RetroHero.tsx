@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface HeroProps {
   hero: { title?: string; subtitle?: string; ctaPrimaryText?: string; ctaPrimaryLink?: string; ctaSecondaryText?: string; ctaSecondaryLink?: string; backgroundImage?: string } | null;
@@ -50,20 +50,20 @@ export default function RetroHero({ hero, t }: HeroProps) {
         </p>
 
         <div className="flex flex-wrap justify-center gap-4">
-          <Link
+          <KioskLink
             to={hero?.ctaPrimaryLink || '/menu'}
             className="bg-amber-700 hover:bg-amber-800 dark:bg-amber-600 dark:hover:bg-amber-700 text-amber-50 px-8 py-3.5 rounded-sm font-bold uppercase tracking-widest text-sm border-2 border-amber-800 dark:border-amber-500 transition-colors shadow-md"
             style={{ fontFamily: 'Georgia, serif' }}
           >
             {hero?.ctaPrimaryText || t('home.viewMenu')}
-          </Link>
-          <Link
+          </KioskLink>
+          <KioskLink
             to={hero?.ctaSecondaryLink || '/locations'}
             className="border-2 border-amber-700 dark:border-amber-500 text-amber-800 dark:text-amber-300 px-8 py-3.5 rounded-sm font-bold uppercase tracking-widest text-sm hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
             style={{ fontFamily: 'Georgia, serif' }}
           >
             {hero?.ctaSecondaryText || t('home.findLocation')}
-          </Link>
+          </KioskLink>
         </div>
 
         {/* Bottom vintage decoration */}

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext.js';
 
@@ -35,9 +35,9 @@ export default function SleekFooter() {
           <div>
             <h3 className="text-gray-300 font-medium mb-4 text-sm">{t('footer.quickLinks')}</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/menu" className="hover:text-cyan-400 transition-colors">{t('nav.menu')}</Link></li>
-              <li><Link to="/locations" className="hover:text-cyan-400 transition-colors">{t('nav.locations')}</Link></li>
-              <li><Link to="/reservations" className="hover:text-cyan-400 transition-colors">{t('nav.reservations')}</Link></li>
+              <li><KioskLink to="/menu" className="hover:text-cyan-400 transition-colors">{t('nav.menu')}</KioskLink></li>
+              <li><KioskLink to="/locations" className="hover:text-cyan-400 transition-colors">{t('nav.locations')}</KioskLink></li>
+              <li><KioskLink to="/reservations" className="hover:text-cyan-400 transition-colors">{t('nav.reservations')}</KioskLink></li>
             </ul>
           </div>
 
@@ -45,9 +45,9 @@ export default function SleekFooter() {
           <div>
             <h3 className="text-gray-300 font-medium mb-4 text-sm">{t('footer.account')}</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/login" className="hover:text-cyan-400 transition-colors">{t('nav.login')}</Link></li>
-              <li><Link to="/register" className="hover:text-cyan-400 transition-colors">{t('footer.createAccount')}</Link></li>
-              <li><Link to="/account" className="hover:text-cyan-400 transition-colors">{t('nav.myAccount')}</Link></li>
+              <li><KioskLink to="/login" className="hover:text-cyan-400 transition-colors">{t('nav.login')}</KioskLink></li>
+              <li><KioskLink to="/register" className="hover:text-cyan-400 transition-colors">{t('footer.createAccount')}</KioskLink></li>
+              <li><KioskLink to="/account" className="hover:text-cyan-400 transition-colors">{t('nav.myAccount')}</KioskLink></li>
             </ul>
           </div>
 
@@ -55,8 +55,8 @@ export default function SleekFooter() {
           <div>
             <h3 className="text-gray-300 font-medium mb-4 text-sm">Legal</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/privacy-policy" className="hover:text-cyan-400 transition-colors">Privacy Policy</Link></li>
-              <li><Link to="/impressum" className="hover:text-cyan-400 transition-colors">Impressum</Link></li>
+              <li><KioskLink to="/privacy-policy" className="hover:text-cyan-400 transition-colors">Privacy Policy</KioskLink></li>
+              <li><KioskLink to="/impressum" className="hover:text-cyan-400 transition-colors">Impressum</KioskLink></li>
               <li>
                 <button
                   onClick={() => window.dispatchEvent(new Event('open-cookie-settings'))}

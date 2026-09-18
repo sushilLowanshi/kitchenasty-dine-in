@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 import { useCart } from '../context/CartContext.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
+import { useKiosk } from '../context/KioskContext.js';
 import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
 import { kioskIdFromPath, storePaths } from '../lib/kioskPath.js';
 import { getActiveOrderIds, setActiveOrderId, setActiveOrderIds, addActiveOrderId, removeActiveOrderId, clearActiveOrderId } from '../lib/activeOrder.js';
@@ -70,6 +71,7 @@ export default function Checkout() {
   const { t } = useTranslation();
   const { items, subtotal, clear } = useCart();
   const { user, token } = useAuth();
+  const { tableName } = useKiosk();
   const navigate = useNavigate();
   const location = useLocation();
   const paths = storePaths(location.pathname);
@@ -85,9 +87,13 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [guestName, setGuestName] = useState('');
-  const [guestEmail, setGuestEmail] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
+  // Contact Information UI commented out — auto guest for table dine-in
+  // const [guestName, setGuestName] = useState('');
+  // const [guestEmail, setGuestEmail] = useState('');
+  // const [guestPhone, setGuestPhone] = useState('');
+  const guestName = tableName ? `Guest (${tableName})` : 'Guest';
+  const guestEmail = 'guest@dinein.local';
+  const guestPhone = '';
 
   // const [deliveryFee, setDeliveryFee] = useState(4.99);
   // const [zoneError, setZoneError] = useState('');
@@ -220,20 +226,32 @@ export default function Checkout() {
     const socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
     ids.forEach((id) => socket.emit('join:order', id));
 
-    socket.on('order:statusUpdate', (data: { id: string; status: string }) => {
+    socket.on('order:statusUpdate', (data: { id: string; status: string; orderNumber?: string }) => {
       if (!ids.includes(data.id)) return;
+
+      if (data.status === 'CANCELLED') {
+        setWaitingForPayment(false);
+        setPayTickets([]);
+        // Toast only for remote/staff cancel — customer cancel toasts in handleCancelOrder
+        if (!cancelHandledRef.current) {
+          cancelHandledRef.current = true;
+          showToast({
+            type: 'info',
+            title: data.orderNumber
+              ? `Order #${data.orderNumber} cancelled successfully`
+              : 'Order cancelled successfully',
+          });
+          window.setTimeout(() => {
+            cancelHandledRef.current = false;
+          }, 4000);
+        }
+      }
+
       setPlacedOrders((prev) => {
         const next = prev.map((order) => (order.id === data.id ? { ...order, status: data.status } : order));
         const stillOpen = next.filter((order) => isOpenStatus(order.status));
         setActiveOrderIds(stillOpen.map((order) => order.id));
-        if (data.status === 'CANCELLED') {
-          setWaitingForPayment(false);
-          setPayTickets([]);
-          if (!cancelHandledRef.current) {
-            showToast({ type: 'info', title: 'Order cancelled' });
-          }
-          cancelHandledRef.current = false;
-        } else if (stillOpen.length === 0 && next.some((order) => order.status === 'COMPLETED')) {
+        if (data.status !== 'CANCELLED' && stillOpen.length === 0 && next.some((order) => order.status === 'COMPLETED')) {
           completePaymentAndGoHome();
         }
         return next;
@@ -492,6 +510,8 @@ export default function Checkout() {
     const target = placedOrders.find((order) => order.id === orderId);
     if (!target) return;
     if (target.status !== 'CONFIRMED' && target.status !== 'PENDING') return;
+    // Mark before fetch so socket cancel event cannot show a second toast
+    cancelHandledRef.current = true;
     setCancellingOrderId(orderId);
     setError('');
     try {
@@ -503,7 +523,6 @@ export default function Checkout() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to cancel order');
-      cancelHandledRef.current = true;
       setPlacedOrders((prev) => {
         const next = prev.map((order) => (order.id === orderId ? { ...order, status: 'CANCELLED' } : order));
         setActiveOrderIds(next.filter((order) => isOpenStatus(order.status)).map((order) => order.id));
@@ -511,8 +530,12 @@ export default function Checkout() {
       });
       removeActiveOrderId(orderId);
       setPayTickets((tickets) => tickets.filter((ticket) => ticket.orderId !== orderId));
-      showToast({ type: 'info', title: `Order #${target.orderNumber} cancelled` });
+      showToast({ type: 'info', title: `Order #${target.orderNumber} cancelled successfully` });
+      window.setTimeout(() => {
+        cancelHandledRef.current = false;
+      }, 4000);
     } catch (err: any) {
+      cancelHandledRef.current = false;
       setError(err.message);
     } finally {
       setCancellingOrderId(null);
@@ -608,42 +631,19 @@ export default function Checkout() {
       <form onSubmit={handleSubmit}>
         {checkoutMode === 'pre-order' ? (
           <div className="w-full space-y-6">
+            {/* Contact Information commented out — customer login/guest form not needed for dine-in table orders
             {!user && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
-                <p className="text-sm text-gray-600 mb-3">
-                  <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium underline">
-                    {t('nav.login')}
-                  </Link>{' '}
-                  for faster checkout, or continue as guest:
-                </p>
+                <p className="text-sm text-gray-600 mb-3">Continue as guest:</p>
                 <div className="space-y-3">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Full name *"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
-                  />
-                  <input
-                    type="email"
-                    required
-                    placeholder="Email address *"
-                    value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone number (optional)"
-                    value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
-                  />
+                  <input type="text" required placeholder="Full name *" value={guestName} ... />
+                  <input type="email" required placeholder="Email address *" value={guestEmail} ... />
+                  <input type="tel" placeholder="Phone number (optional)" value={guestPhone} ... />
                 </div>
               </div>
             )}
+            */}
             <CheckoutOrderSummary
               title={t('checkout.orderSummary')}
               items={summaryItems}

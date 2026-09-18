@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface HeroProps {
   hero: { title?: string; subtitle?: string; ctaPrimaryText?: string; ctaPrimaryLink?: string; ctaSecondaryText?: string; ctaSecondaryLink?: string; backgroundImage?: string } | null;
@@ -40,18 +40,18 @@ export default function VibrantHero({ hero, t }: HeroProps) {
         </p>
 
         <div className="flex flex-wrap justify-center gap-4">
-          <Link
+          <KioskLink
             to={hero?.ctaPrimaryLink || '/menu'}
             className="bg-white text-primary-700 px-8 py-4 rounded-full font-bold text-lg hover:bg-yellow-100 transition-colors shadow-xl shadow-black/20"
           >
             {hero?.ctaPrimaryText || t('home.viewMenu')}
-          </Link>
-          <Link
+          </KioskLink>
+          <KioskLink
             to={hero?.ctaSecondaryLink || '/locations'}
             className="border-2 border-white text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-white/20 transition-colors"
           >
             {hero?.ctaSecondaryText || t('home.findLocation')}
-          </Link>
+          </KioskLink>
         </div>
       </div>
     </section>

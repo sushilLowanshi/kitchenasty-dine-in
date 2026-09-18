@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function RusticCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-20 bg-stone-100 dark:bg-stone-900/40">
@@ -27,12 +27,12 @@ export default function RusticCta({ cta, t }: CtaProps) {
           <p className="text-lg text-stone-600 dark:text-stone-400 mb-10 max-w-lg mx-auto">
             {description}
           </p>
-          <Link
+          <KioskLink
             to={buttonLink}
             className="inline-block px-8 py-3 bg-stone-800 dark:bg-stone-200 text-stone-50 dark:text-stone-900 font-medium rounded-sm hover:bg-stone-700 dark:hover:bg-stone-300 transition-colors"
           >
             {buttonText}
-          </Link>
+          </KioskLink>
         </div>
       </div>
     </section>

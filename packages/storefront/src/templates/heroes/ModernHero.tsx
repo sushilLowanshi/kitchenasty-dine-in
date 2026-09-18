@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface HeroProps {
   hero: { title?: string; subtitle?: string; ctaPrimaryText?: string; ctaPrimaryLink?: string; ctaSecondaryText?: string; ctaSecondaryLink?: string; backgroundImage?: string } | null;
@@ -30,18 +30,18 @@ export default function ModernHero({ hero, t }: HeroProps) {
             </h1>
 
             <div className="flex flex-wrap gap-4">
-              <Link
+              <KioskLink
                 to={hero?.ctaPrimaryLink || '/menu'}
                 className="bg-primary-600 text-white px-8 py-3.5 rounded-2xl font-semibold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-600/25"
               >
                 {hero?.ctaPrimaryText || t('home.viewMenu')}
-              </Link>
-              <Link
+              </KioskLink>
+              <KioskLink
                 to={hero?.ctaSecondaryLink || '/locations'}
                 className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-8 py-3.5 rounded-2xl font-semibold hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-md border border-gray-200 dark:border-gray-700"
               >
                 {hero?.ctaSecondaryText || t('home.findLocation')}
-              </Link>
+              </KioskLink>
             </div>
           </div>
 

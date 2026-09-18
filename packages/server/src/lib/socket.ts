@@ -49,12 +49,18 @@ export function emitOrderStatusUpdate(order: {
   status: string;
   orderType: string;
   customerId?: string | null;
+  table?: { id: string; name: string } | null;
+  items?: { name: string; quantity: number }[];
+  cancelledByCustomer?: boolean;
 }): void {
   if (!io) return;
   // Notify the specific order room (customer tracking)
   io.to(`order:${order.id}`).emit('order:statusUpdate', order);
   // Notify the kitchen display
   io.to('kitchen').emit('order:statusUpdate', order);
+  if (order.status === 'CANCELLED' && order.cancelledByCustomer) {
+    io.to('kitchen').emit('order:cancelled', order);
+  }
 
   // Send push notification to the customer
   if (order.customerId) {

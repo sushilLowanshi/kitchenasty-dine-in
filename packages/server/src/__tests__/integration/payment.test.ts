@@ -123,13 +123,16 @@ describe('Payment API - Integration Tests', () => {
 
     it('creates cash payment record', async () => {
       mockedPrisma.order.findUnique.mockResolvedValue(sampleOrder as any);
+      // No completed or pending cash payment yet (findFirst is called twice)
+      mockedPrisma.payment.findFirst.mockResolvedValue(null);
       mockedPrisma.payment.create.mockResolvedValue({
         id: 'pay-1',
         orderId: 'order-1',
         method: 'CASH',
-        status: 'PENDING',
+        status: 'COMPLETED',
         amount: 32.38,
       } as any);
+      mockedPrisma.order.update.mockResolvedValue({ ...sampleOrder, status: 'COMPLETED' } as any);
 
       const res = await request(app)
         .post('/api/payments/cash')
