@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApi } from '../hooks/useApi.js';
+import { storePaths } from '../lib/kioskPath.js';
 
 interface Location {
   id: string;
@@ -17,6 +18,8 @@ interface Location {
 
 export default function Locations() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const paths = storePaths(location.pathname);
   const { data: locations, error, isLoading } = useApi<Location[]>('/api/locations');
 
   return (
@@ -65,19 +68,12 @@ export default function Locations() {
                   <p className="text-sm text-gray-500 mb-4">{loc.phone}</p>
                 )}
                 <div className="flex gap-2 mb-4">
-                  {loc.acceptsDelivery && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                      {t('checkout.delivery')}
-                    </span>
-                  )}
-                  {loc.acceptsPickup && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                      {t('checkout.pickup')}
-                    </span>
-                  )}
+                  <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full font-medium">
+                    Dine In
+                  </span>
                 </div>
                 <Link
-                  to={`/menu?location=${loc.id}`}
+                  to={`${paths.menu}?location=${loc.id}`}
                   className="block text-center bg-primary-600 text-white py-2 rounded-lg font-medium hover:bg-primary-700 transition-colors"
                 >
                   {t('locations.viewMenu')}

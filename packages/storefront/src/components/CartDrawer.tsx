@@ -73,7 +73,7 @@ export default function CartDrawer() {
               .map((o) => o.valueName || o.value || '')
               .filter(Boolean)
               .join(', '),
-            status,
+            status: (item.status as string) || status,
           });
         });
       }
@@ -135,7 +135,7 @@ export default function CartDrawer() {
 
         {/* Items */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {items.length === 0 ? (
+          {items.length === 0 && existingItems.length === 0 ? (
             <div className="text-center py-12">
               <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
@@ -188,66 +188,68 @@ export default function CartDrawer() {
                 </div>
               )}
 
-              <div>
-                {existingItems.length > 0 && (
-                  <p className="text-xs font-semibold uppercase tracking-wide text-primary-600 mb-3">
-                    Adding now
-                  </p>
-                )}
-                <div className="space-y-4">
-                  {items.map((item) => {
-                    const optionsTotal = item.options.reduce((s, o) => s + o.priceModifier, 0);
-                    const lineTotal = (item.price + optionsTotal) * item.quantity;
-                    return (
-                      <div key={item.id} className="flex gap-3 pb-4 border-b border-gray-100">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-medium text-gray-900 text-sm">{item.name}</h3>
-                            {existingItems.length > 0 && (
-                              <span className="text-[10px] uppercase font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
-                                New
-                              </span>
+              {items.length > 0 && (
+                <div>
+                  {existingItems.length > 0 && (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary-600 mb-3">
+                      Adding now
+                    </p>
+                  )}
+                  <div className="space-y-4">
+                    {items.map((item) => {
+                      const optionsTotal = item.options.reduce((s, o) => s + o.priceModifier, 0);
+                      const lineTotal = (item.price + optionsTotal) * item.quantity;
+                      return (
+                        <div key={item.id} className="flex gap-3 pb-4 border-b border-gray-100">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-medium text-gray-900 text-sm">{item.name}</h3>
+                              {existingItems.length > 0 && (
+                                <span className="text-[10px] uppercase font-semibold text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
+                                  New
+                                </span>
+                              )}
+                            </div>
+                            {item.options.length > 0 && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {item.options.map((o) => o.valueName).join(', ')}
+                              </p>
                             )}
+                            <div className="flex items-center gap-2 mt-2">
+                              <button
+                                onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                                className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50"
+                              >
+                                -
+                              </button>
+                              <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
+                              <button
+                                onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                                className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50"
+                              >
+                                +
+                              </button>
+                              <button
+                                onClick={() => removeItem(item.id)}
+                                className="ml-2 text-xs text-red-500 hover:text-red-700"
+                              >
+                                {t('cart.remove')}
+                              </button>
+                            </div>
                           </div>
-                          {item.options.length > 0 && (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {item.options.map((o) => o.valueName).join(', ')}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-2">
-                            <button
-                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                              className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50"
-                            >
-                              -
-                            </button>
-                            <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
-                            <button
-                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                              className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50"
-                            >
-                              +
-                            </button>
-                            <button
-                              onClick={() => removeItem(item.id)}
-                              className="ml-2 text-xs text-red-500 hover:text-red-700"
-                            >
-                              {t('cart.remove')}
-                            </button>
-                          </div>
+                          <div className="text-sm font-medium text-gray-900">${lineTotal.toFixed(2)}</div>
                         </div>
-                        <div className="text-sm font-medium text-gray-900">${lineTotal.toFixed(2)}</div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        {items.length > 0 && (
+        {/* Footer — show when cart has new items OR a previous order exists */}
+        {(items.length > 0 || existingItems.length > 0) && (
           <div className="border-t border-gray-200 px-6 py-4 space-y-3">
             {existingItems.length > 0 && (
               <div className="flex justify-between text-sm">
@@ -255,19 +257,31 @@ export default function CartDrawer() {
                 <span className="font-medium text-gray-500">${existingSubtotal.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">
-                {existingItems.length > 0 ? 'New items' : t('cart.subtotal')}
-              </span>
-              <span className="font-semibold text-gray-900">${subtotal.toFixed(2)}</span>
-            </div>
-            <Link
-              to={paths.checkout}
-              onClick={() => setIsOpen(false)}
-              className="block text-center bg-primary-600 text-white py-2.5 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
-            >
-              {activeOrderId ? 'Add to Order' : t('cart.checkout')}
-            </Link>
+            {items.length > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">
+                  {existingItems.length > 0 ? 'New items' : t('cart.subtotal')}
+                </span>
+                <span className="font-semibold text-gray-900">${subtotal.toFixed(2)}</span>
+              </div>
+            )}
+            {items.length > 0 ? (
+              <Link
+                to={paths.checkout}
+                onClick={() => setIsOpen(false)}
+                className="block text-center bg-primary-600 text-white py-2.5 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+              >
+                {activeOrderId ? 'Add to Order' : t('cart.checkout')}
+              </Link>
+            ) : (
+              <Link
+                to={paths.menu}
+                onClick={() => setIsOpen(false)}
+                className="block text-center bg-primary-600 text-white py-2.5 rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+              >
+                Browse Menu / Add Items
+              </Link>
+            )}
             {activeOrderId ? (
               <button
                 type="button"
@@ -277,12 +291,14 @@ export default function CartDrawer() {
                 Back to your order
               </button>
             ) : null}
-            <button
-              onClick={clear}
-              className="block w-full text-center text-sm text-gray-500 hover:text-gray-700"
-            >
-              {t('common.delete')}
-            </button>
+            {items.length > 0 && (
+              <button
+                onClick={clear}
+                className="block w-full text-center text-sm text-gray-500 hover:text-gray-700"
+              >
+                {t('common.delete')}
+              </button>
+            )}
           </div>
         )}
       </div>

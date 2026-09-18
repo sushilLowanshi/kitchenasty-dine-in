@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function MinimalCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-20">
@@ -20,12 +20,12 @@ export default function MinimalCta({ cta, t }: CtaProps) {
         <p className="text-base text-gray-500 dark:text-gray-400 mb-8">
           {description}
         </p>
-        <Link
+        <KioskLink
           to={buttonLink}
           className="text-primary-600 dark:text-primary-400 font-medium underline underline-offset-4 decoration-1 hover:decoration-2 transition-all"
         >
           {buttonText}
-        </Link>
+        </KioskLink>
       </div>
     </section>
   );

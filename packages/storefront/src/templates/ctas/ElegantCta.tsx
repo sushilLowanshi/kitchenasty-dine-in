@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import KioskLink from '../../components/KioskLink.js';
 
 interface CtaProps {
   cta: { title?: string; description?: string; buttonText?: string; buttonLink?: string } | null;
@@ -9,7 +9,7 @@ export default function ElegantCta({ cta, t }: CtaProps) {
   const title = cta?.title || t('home.readyToOrder');
   const description = cta?.description || t('home.readyToOrderDesc');
   const buttonText = cta?.buttonText || t('home.createAccount');
-  const buttonLink = cta?.buttonLink || '/register';
+  const buttonLink = cta?.buttonLink || '/menu';
 
   return (
     <section className="py-24 bg-gray-50 dark:bg-gray-900/50">
@@ -21,12 +21,12 @@ export default function ElegantCta({ cta, t }: CtaProps) {
         <p className="text-lg text-gray-500 dark:text-gray-400 font-light leading-relaxed mb-10 max-w-xl mx-auto">
           {description}
         </p>
-        <Link
+        <KioskLink
           to={buttonLink}
           className="inline-block px-8 py-3 text-sm font-medium uppercase tracking-widest border-2 border-primary-600 text-primary-600 hover:bg-primary-600 hover:text-white transition-all duration-300 rounded-sm"
         >
           {buttonText}
-        </Link>
+        </KioskLink>
         <div className="w-16 h-px bg-primary-400 mx-auto mt-8" />
       </div>
     </section>

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext.js';
 import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
+import KioskLink from '../components/KioskLink.js';
+import { billPath } from '../lib/kioskPath.js';
 
 interface OrderItem {
   id: string;
@@ -39,6 +41,7 @@ function getStepIndex(steps: { key: string; label: string }[], status: string): 
 export default function OrderStatus() {
   const { t } = useTranslation();
   const { id } = useParams();
+  const location = useLocation();
   const { token } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,9 +120,9 @@ export default function OrderStatus() {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-4">{error || t('orders.errorLoading')}</div>
-        <Link to="/account/orders" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
-          {t('orders.backToOrders')}
-        </Link>
+        <KioskLink to="/menu" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          {t('home.viewMenu')}
+        </KioskLink>
       </div>
     );
   }
@@ -143,9 +146,9 @@ export default function OrderStatus() {
             {new Date(order.createdAt).toLocaleString()}
           </p>
         </div>
-        <Link to="/account/orders" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
-          {t('orders.title')}
-        </Link>
+        <KioskLink to="/menu" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          {t('home.viewMenu')}
+        </KioskLink>
       </div>
 
       {/* Status Tracker */}
@@ -251,25 +254,25 @@ export default function OrderStatus() {
 
       <div className="mt-8 flex justify-center gap-4 flex-wrap">
         {canPayBill && (
-          <Link
-            to={`/orders/${order.id}/bill`}
+          <KioskLink
+            to={billPath(location.pathname, order.id)}
             className="bg-teal-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-teal-700 transition-colors"
           >
             Pay Bill
-          </Link>
+          </KioskLink>
         )}
-        <Link
+        <KioskLink
           to="/menu"
           className="bg-primary-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors"
         >
           {t('home.viewMenu')}
-        </Link>
-        <Link
-          to="/account/orders"
+        </KioskLink>
+        <KioskLink
+          to="/"
           className="border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors"
         >
-          {t('orders.title')}
-        </Link>
+          {t('notFound.backHome')}
+        </KioskLink>
       </div>
     </div>
   );

@@ -119,6 +119,10 @@ export default function LocationList() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <div className="flex gap-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
+                        Dine In
+                      </span>
+                      {/* Legacy delivery/pickup badges
                       {loc.deliveryEnabled && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                           Delivery
@@ -129,6 +133,7 @@ export default function LocationList() {
                           Pickup
                         </span>
                       )}
+                      */}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
