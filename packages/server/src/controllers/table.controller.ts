@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/db.js';
+import { assertLocationAccess } from '../lib/locationScope.js';
 
 const createTableSchema = z.object({
   name: z.string().min(1),
@@ -24,6 +25,7 @@ export async function listTables(req: Request<{ locationId: string }>, res: Resp
     orderBy: { name: 'asc' },
     include: {
       _count: { select: { reservations: true } },
+      kiosk: { select: { id: true, isActive: true } },
     },
   });
 
@@ -50,6 +52,13 @@ export async function getTable(req: Request<{ locationId: string; tableId: strin
 
 export async function createTable(req: Request<{ locationId: string }>, res: Response): Promise<void> {
   const { locationId } = req.params;
+
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   const parsed = createTableSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ success: false, error: parsed.error.errors });
@@ -62,7 +71,6 @@ export async function createTable(req: Request<{ locationId: string }>, res: Res
     return;
   }
 
-  // Check unique name within location
   const existing = await prisma.table.findFirst({
     where: { locationId, name: parsed.data.name },
   });
@@ -80,6 +88,13 @@ export async function createTable(req: Request<{ locationId: string }>, res: Res
 
 export async function updateTable(req: Request<{ locationId: string; tableId: string }>, res: Response): Promise<void> {
   const { locationId, tableId } = req.params;
+
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   const parsed = updateTableSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ success: false, error: parsed.error.errors });
@@ -94,7 +109,6 @@ export async function updateTable(req: Request<{ locationId: string; tableId: st
     return;
   }
 
-  // If renaming, check uniqueness
   if (parsed.data.name && parsed.data.name !== table.name) {
     const duplicate = await prisma.table.findFirst({
       where: { locationId, name: parsed.data.name },
@@ -115,6 +129,12 @@ export async function updateTable(req: Request<{ locationId: string; tableId: st
 
 export async function deleteTable(req: Request<{ locationId: string; tableId: string }>, res: Response): Promise<void> {
   const { locationId, tableId } = req.params;
+
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
 
   const table = await prisma.table.findFirst({
     where: { id: tableId, locationId },

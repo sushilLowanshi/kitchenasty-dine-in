@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface MetricsSummary {
   totalRequests: number;
@@ -51,7 +52,7 @@ export default function DeveloperMetrics() {
   const [endpoints, setEndpoints] = useState<EndpointData[]>([]);
   const [hours, setHours] = useState(24);
   const [loading, setLoading] = useState(true);
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     setLoading(true);

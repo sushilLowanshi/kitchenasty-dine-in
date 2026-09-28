@@ -1,59 +1,178 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
+import { RestaurantProvider } from './context/RestaurantContext.js';
 import AdminLayout from './components/AdminLayout.js';
 import RequireRole from './components/RequireRole.js';
 import Login from './pages/Login.js';
-import Dashboard from './pages/Dashboard.js';
 import LocationList from './pages/LocationList.js';
 import LocationForm from './pages/LocationForm.js';
-import CategoryList from './pages/CategoryList.js';
-import CategoryForm from './pages/CategoryForm.js';
-import MenuItemList from './pages/MenuItemList.js';
-import MenuItemForm from './pages/MenuItemForm.js';
 import TableList from './pages/TableList.js';
-import OrderList from './pages/OrderList.js';
-import OrderDetailPage from './pages/OrderDetail.js';
-import ReservationList from './pages/ReservationList.js';
-import ReservationDetail from './pages/ReservationDetail.js';
-import ReservationTrends from './pages/ReservationTrends.js';
-import CouponList from './pages/CouponList.js';
-import CouponForm from './pages/CouponForm.js';
-import ReviewList from './pages/ReviewList.js';
-import KitchenDisplay from './pages/KitchenDisplay.js';
-import AutomationRuleList from './pages/AutomationRuleList.js';
-import AutomationRuleForm from './pages/AutomationRuleForm.js';
 import DeliveryZoneList from './pages/DeliveryZoneList.js';
-import CustomerLoyalty from './pages/CustomerLoyalty.js';
-import LegalPageList from './pages/LegalPageList.js';
-import LegalPageForm from './pages/LegalPageForm.js';
-import CookieCategoryList from './pages/CookieCategoryList.js';
-import ConsentLog from './pages/ConsentLog.js';
-import DesignLanding from './pages/DesignLanding.js';
-import DesignBranding from './pages/DesignBranding.js';
-import DesignTheme from './pages/DesignTheme.js';
-import DesignTemplates from './pages/DesignTemplates.js';
-import DesignGallery from './pages/DesignGallery.js';
-import DesignMedia from './pages/DesignMedia.js';
-import StaffList from './pages/StaffList.js';
-import StaffInvite from './pages/StaffInvite.js';
-import StaffEdit from './pages/StaffEdit.js';
 import AcceptInvite from './pages/AcceptInvite.js';
-import Settings from './pages/Settings.js';
-import DeveloperMetrics from './pages/DeveloperMetrics.js';
-import AuditLog from './pages/AuditLog.js';
-import SettingsGeneral from './pages/SettingsGeneral.js';
-import SettingsOrder from './pages/SettingsOrder.js';
-import SettingsReservation from './pages/SettingsReservation.js';
-import SettingsMail from './pages/SettingsMail.js';
-import SettingsPayments from './pages/SettingsPayments.js';
-import SettingsReviews from './pages/SettingsReviews.js';
-import SettingsAdvanced from './pages/SettingsAdvanced.js';
+import { SharedAppRoutes } from './appRoutes.js';
+import {
+  getStoredToken,
+  portalBase,
+  portalHome,
+} from './lib/authStorage.js';
+import { apiUrl } from './lib/apiBase.js';
 import './index.css';
 
+function AdminPortal({ onLogout }: { onLogout?: () => void }) {
+  const { user } = useAuth();
+
+  if (user && (user.role === 'MANAGER' || user.role === 'STAFF') && user.location?.slug) {
+    return <Navigate to={portalHome(user.location.slug, user.role)} replace />;
+  }
+
+  return (
+    <AdminLayout onLogout={onLogout} basePath="">
+      <Routes>
+        <Route path="locations" element={<RequireRole roles={['SUPER_ADMIN']}><LocationList /></RequireRole>} />
+        <Route path="locations/new" element={<RequireRole roles={['SUPER_ADMIN']}><LocationForm /></RequireRole>} />
+        <Route path="locations/:id" element={<RequireRole roles={['SUPER_ADMIN']}><LocationForm /></RequireRole>} />
+        <Route path="locations/:locationId/tables" element={<RequireRole roles={['SUPER_ADMIN']}><TableList /></RequireRole>} />
+        <Route path="locations/:locationId/delivery-zones" element={<RequireRole roles={['SUPER_ADMIN']}><DeliveryZoneList /></RequireRole>} />
+        {SharedAppRoutes()}
+      </Routes>
+    </AdminLayout>
+  );
+}
+
+function RolePortal({
+  onLogout,
+  portalRole,
+}: {
+  onLogout?: () => void;
+  portalRole: 'MANAGER' | 'STAFF';
+}) {
+  const { slug } = useParams<{ slug: string }>();
+  const { user, token, loading } = useAuth();
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [locationMeta, setLocationMeta] = useState<{ id: string; slug: string; name: string } | null>(null);
+
+  useEffect(() => {
+    if (!slug || !token || loading) return;
+
+    if (user?.location?.slug) {
+      if (user.location.slug !== slug) {
+        setBootError('redirect-slug');
+        return;
+      }
+      setLocationMeta(user.location);
+      return;
+    }
+
+    fetch(apiUrl('/api/locations'), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const list = (data.data || []) as { id: string; slug: string; name: string }[];
+        const match = list.find((l) => l.slug === slug);
+        if (!match) {
+          setBootError('Restaurant not found or access denied');
+          return;
+        }
+        setLocationMeta(match);
+      })
+      .catch((err) => setBootError(err.message));
+  }, [slug, token, loading, user]);
+
+  if (loading || (token && user && !locationMeta && !bootError)) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (user?.role === 'SUPER_ADMIN') {
+    return <Navigate to={locationMeta ? `/locations/${locationMeta.id}` : '/locations'} replace />;
+  }
+
+  // Wrong role portal (manager opened /staff URL or vice versa)
+  if (user && (user.role === 'MANAGER' || user.role === 'STAFF') && user.role !== portalRole && user.location?.slug) {
+    return <Navigate to={portalHome(user.location.slug, user.role)} replace />;
+  }
+
+  if (bootError === 'redirect-slug' && user?.location?.slug && (user.role === 'MANAGER' || user.role === 'STAFF')) {
+    return <Navigate to={portalHome(user.location.slug, user.role)} replace />;
+  }
+
+  if (bootError || !locationMeta || !slug) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+        <div className="bg-white rounded-xl p-8 max-w-sm text-center">
+          <p className="text-red-600">{bootError || 'Restaurant unavailable'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const basePath = portalBase(slug, portalRole);
+
+  return (
+    <RestaurantProvider
+      value={{
+        locationId: locationMeta.id,
+        slug: locationMeta.slug,
+        name: locationMeta.name,
+        basePath,
+      }}
+    >
+      <AdminLayout onLogout={onLogout} basePath={basePath} restaurantName={locationMeta.name}>
+        <Routes>
+          {portalRole === 'MANAGER' && (
+            <>
+              <Route path="restaurant" element={<RequireRole roles={['MANAGER']}><LocationForm /></RequireRole>} />
+              <Route path="tables" element={<RequireRole roles={['MANAGER']}><TableList /></RequireRole>} />
+              <Route path="delivery-zones" element={<RequireRole roles={['MANAGER']}><DeliveryZoneList /></RequireRole>} />
+            </>
+          )}
+          {SharedAppRoutes()}
+        </Routes>
+      </AdminLayout>
+    </RestaurantProvider>
+  );
+}
+
+function SessionBounce({ scope }: { scope: 'manager' | 'staff' }) {
+  const token = getStoredToken(scope);
+  const [target, setTarget] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setFailed(true);
+      return;
+    }
+    fetch(apiUrl('/api/auth/me'), { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => {
+        const u = data?.data?.user;
+        const nextSlug = u?.location?.slug;
+        const role = u?.role as string | undefined;
+        if (nextSlug && (role === 'MANAGER' || role === 'STAFF')) {
+          setTarget(portalHome(nextSlug, role));
+        } else setFailed(true);
+      })
+      .catch(() => setFailed(true));
+  }, [token]);
+
+  if (target) return <Navigate to={target} replace />;
+  if (failed) return <Login />;
+  return (
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+    </div>
+  );
+}
+
 function AppRoutes() {
-  const { token, user, loading, login, logout } = useAuth();
+  const { token, user, loading, logout, scope } = useAuth();
 
   if (loading) {
     return (
@@ -63,83 +182,58 @@ function AppRoutes() {
     );
   }
 
-  if (!token || !user) {
-    return (
-      <Routes>
-        <Route path="/accept-invite" element={<AcceptInvite />} />
-        <Route path="*" element={<Login onLogin={login} />} />
-      </Routes>
-    );
+  // Soft bounce: opened admin URL while manager/staff session exists
+  if (scope === 'admin' && !token) {
+    if (getStoredToken('manager')) return <SessionBounce scope="manager" />;
+    if (getStoredToken('staff')) return <SessionBounce scope="staff" />;
   }
 
   return (
-    <AdminLayout onLogout={logout}>
-      <Routes>
-        {/* All roles */}
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/orders" element={<OrderList />} />
-        <Route path="/orders/:id" element={<OrderDetailPage />} />
-        <Route path="/reservations" element={<ReservationList />} />
-        <Route path="/reservations/trends" element={<ReservationTrends />} />
-        <Route path="/reservations/:id" element={<ReservationDetail />} />
-        <Route path="/reviews" element={<ReviewList />} />
-        <Route path="/kitchen" element={<KitchenDisplay />} />
+    <Routes>
+      <Route path="/accept-invite" element={<AcceptInvite />} />
 
-        {/* MANAGER+ */}
-        <Route path="/locations" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><LocationList /></RequireRole>} />
-        <Route path="/locations/new" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><LocationForm /></RequireRole>} />
-        <Route path="/locations/:id" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><LocationForm /></RequireRole>} />
-        <Route path="/locations/:locationId/tables" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><TableList /></RequireRole>} />
-        <Route path="/locations/:locationId/delivery-zones" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DeliveryZoneList /></RequireRole>} />
-        <Route path="/menu" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><Navigate to="/menu/items" replace /></RequireRole>} />
-        <Route path="/menu/categories" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CategoryList /></RequireRole>} />
-        <Route path="/menu/categories/new" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CategoryForm /></RequireRole>} />
-        <Route path="/menu/categories/:id" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CategoryForm /></RequireRole>} />
-        <Route path="/menu/items" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><MenuItemList /></RequireRole>} />
-        <Route path="/menu/items/new" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><MenuItemForm /></RequireRole>} />
-        <Route path="/menu/items/:id" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><MenuItemForm /></RequireRole>} />
-        <Route path="/coupons" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CouponList /></RequireRole>} />
-        <Route path="/coupons/new" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CouponForm /></RequireRole>} />
-        <Route path="/coupons/:id" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CouponForm /></RequireRole>} />
-        <Route path="/automation" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><AutomationRuleList /></RequireRole>} />
-        <Route path="/automation/new" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><AutomationRuleForm /></RequireRole>} />
-        <Route path="/automation/:id" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><AutomationRuleForm /></RequireRole>} />
-        <Route path="/loyalty" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CustomerLoyalty /></RequireRole>} />
-        <Route path="/design" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><Navigate to="/design/landing" replace /></RequireRole>} />
-        <Route path="/design/landing" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignLanding /></RequireRole>} />
-        <Route path="/design/branding" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignBranding /></RequireRole>} />
-        <Route path="/design/theme" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignTheme /></RequireRole>} />
-        <Route path="/design/templates" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignTemplates /></RequireRole>} />
-        <Route path="/design/gallery" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignGallery /></RequireRole>} />
-        <Route path="/design/media" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DesignMedia /></RequireRole>} />
-        <Route path="/legal" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><Navigate to="/legal/pages" replace /></RequireRole>} />
-        <Route path="/legal/pages" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><LegalPageList /></RequireRole>} />
-        <Route path="/legal/pages/:slug" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><LegalPageForm /></RequireRole>} />
-        <Route path="/legal/cookies" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><CookieCategoryList /></RequireRole>} />
-        <Route path="/legal/consent" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><ConsentLog /></RequireRole>} />
+      {/* Legacy bookmark redirect */}
+      <Route
+        path="/restaurants/:slug/*"
+        element={<LegacyRestaurantRedirect />}
+      />
 
-        {/* Settings — MANAGER+ (sub-pages have their own role checks) */}
-        <Route path="/settings" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><Settings /></RequireRole>} />
-        <Route path="/settings/general" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><SettingsGeneral /></RequireRole>} />
-        <Route path="/settings/order" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><SettingsOrder /></RequireRole>} />
-        <Route path="/settings/reservation" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><SettingsReservation /></RequireRole>} />
-        <Route path="/settings/mail" element={<RequireRole roles={['SUPER_ADMIN']}><SettingsMail /></RequireRole>} />
-        <Route path="/settings/payment" element={<RequireRole roles={['SUPER_ADMIN']}><SettingsPayments /></RequireRole>} />
-        <Route path="/settings/review" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><SettingsReviews /></RequireRole>} />
-        <Route path="/settings/advanced" element={<RequireRole roles={['SUPER_ADMIN']}><SettingsAdvanced /></RequireRole>} />
+      <Route
+        path="/:slug/manager/*"
+        element={
+          token && user ? (
+            <RolePortal onLogout={logout} portalRole="MANAGER" />
+          ) : (
+            <Login />
+          )
+        }
+      />
+      <Route
+        path="/:slug/staff/*"
+        element={
+          token && user ? (
+            <RolePortal onLogout={logout} portalRole="STAFF" />
+          ) : (
+            <Login />
+          )
+        }
+      />
 
-        {/* Developer — MANAGER+ for metrics, SUPER_ADMIN for audit */}
-        <Route path="/developer" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><Navigate to="/developer/metrics" replace /></RequireRole>} />
-        <Route path="/developer/metrics" element={<RequireRole roles={['SUPER_ADMIN', 'MANAGER']}><DeveloperMetrics /></RequireRole>} />
-        <Route path="/developer/audit-log" element={<RequireRole roles={['SUPER_ADMIN']}><AuditLog /></RequireRole>} />
-
-        {/* SUPER_ADMIN only */}
-        <Route path="/staff" element={<RequireRole roles={['SUPER_ADMIN']}><StaffList /></RequireRole>} />
-        <Route path="/staff/invite" element={<RequireRole roles={['SUPER_ADMIN']}><StaffInvite /></RequireRole>} />
-        <Route path="/staff/:id" element={<RequireRole roles={['SUPER_ADMIN']}><StaffEdit /></RequireRole>} />
-      </Routes>
-    </AdminLayout>
+      {!token || !user ? (
+        <Route path="*" element={<Login />} />
+      ) : (
+        <Route path="/*" element={<AdminPortal onLogout={logout} />} />
+      )}
+    </Routes>
   );
+}
+
+function LegacyRestaurantRedirect() {
+  const { slug } = useParams<{ slug: string }>();
+  const { user } = useAuth();
+  const role = user?.role === 'STAFF' ? 'STAFF' : 'MANAGER';
+  if (!slug) return <Navigate to="/" replace />;
+  return <Navigate to={portalHome(slug, role)} replace />;
 }
 
 function App() {

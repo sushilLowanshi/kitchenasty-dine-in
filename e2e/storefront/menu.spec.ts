@@ -35,8 +35,8 @@ test.describe('Storefront Menu Page', () => {
 
   test('navigating to menu from home hero', async ({ page }) => {
     await page.goto('/');
-    // CTA text comes from DB seed — accept either seeded or default
-    await page.getByRole('main').getByRole('link', { name: /View Menu|Explore Our Menu/ }).click();
+    // Multiple View Menu links may exist — click the first in main
+    await page.getByRole('main').getByRole('link', { name: /View Menu|Explore Our Menu/ }).first().click();
     await expect(page).toHaveURL(/\/menu/);
   });
 

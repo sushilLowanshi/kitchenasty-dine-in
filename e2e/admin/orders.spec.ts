@@ -22,8 +22,7 @@ test.describe('Admin Order List', () => {
     const typeSelect = page.locator('select').nth(1);
     await expect(typeSelect).toBeVisible();
     await expect(typeSelect).toContainText('All Types');
-    await expect(typeSelect).toContainText('Delivery');
-    await expect(typeSelect).toContainText('Pickup');
+    await expect(typeSelect).toContainText('Dine In');
   });
 
   test('shows loading spinner initially', async ({ page }) => {
@@ -56,8 +55,8 @@ test.describe('Admin Order List', () => {
   test('type filter changes URL params', async ({ page }) => {
     await page.goto('/orders');
     const typeSelect = page.locator('select').nth(1);
-    await typeSelect.selectOption('DELIVERY');
-    await expect(typeSelect).toHaveValue('DELIVERY');
+    await typeSelect.selectOption('DINE_IN');
+    await expect(typeSelect).toHaveValue('DINE_IN');
   });
 });
 

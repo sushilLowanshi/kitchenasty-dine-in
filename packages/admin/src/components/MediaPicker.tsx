@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 export interface MediaAsset {
   id: string;
@@ -26,7 +27,7 @@ export function MediaPickerModal({
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   async function load() {
     setLoading(true);

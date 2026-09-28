@@ -168,35 +168,100 @@ export default function Checkout() {
   }, []);
 
   useEffect(() => {
-    const ids = getActiveOrderIds();
-    if (ids.length === 0) {
-      setLoadingActiveOrder(false);
-      return;
+    let cancelled = false;
+
+    async function loadSession() {
+      if (kioskId) {
+        try {
+          const res = await fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`));
+          const data = await res.json();
+          if (cancelled) return;
+          if (!data.success) {
+            setLoadingActiveOrder(false);
+            return;
+          }
+          const orders = ((data.data?.orders as Record<string, unknown>[]) || [])
+            .map((o) => mapApiOrder(o))
+            .filter((o) => isOpenStatus(o.status));
+          setActiveOrderIds(orders.map((o) => o.id));
+          setPlacedOrders(orders);
+        } catch {
+          /* ignore */
+        } finally {
+          if (!cancelled) setLoadingActiveOrder(false);
+        }
+        return;
+      }
+
+      const ids = getActiveOrderIds();
+      if (ids.length === 0) {
+        setLoadingActiveOrder(false);
+        return;
+      }
+
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      Promise.all(
+        ids.map((id) =>
+          fetch(apiUrl(`/api/orders/${id}`), { headers })
+            .then((res) => res.json())
+            .then((data) => (data.success ? mapApiOrder(data.data as Record<string, unknown>) : null))
+            .catch(() => null)
+        )
+      )
+        .then((loaded) => {
+          if (cancelled) return;
+          const orders = loaded.filter((order): order is PlacedOrder => !!order && isOpenStatus(order.status));
+          if (orders.length === 0) {
+            clearActiveOrderId();
+            setPlacedOrders([]);
+            return;
+          }
+          setActiveOrderIds(orders.map((order) => order.id));
+          setPlacedOrders(orders);
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingActiveOrder(false);
+        });
     }
 
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
+    setLoadingActiveOrder(true);
+    loadSession();
 
-    Promise.all(
-      ids.map((id) =>
-        fetch(apiUrl(`/api/orders/${id}`), { headers })
-          .then((res) => res.json())
-          .then((data) => (data.success ? mapApiOrder(data.data as Record<string, unknown>) : null))
-          .catch(() => null)
-      )
-    )
-      .then((loaded) => {
-        const orders = loaded.filter((order): order is PlacedOrder => !!order && isOpenStatus(order.status));
-        if (orders.length === 0) {
-          clearActiveOrderId();
-          setPlacedOrders([]);
-          return;
-        }
-        setActiveOrderIds(orders.map((order) => order.id));
-        setPlacedOrders(orders);
-      })
-      .finally(() => setLoadingActiveOrder(false));
-  }, [token]);
+    return () => {
+      cancelled = true;
+    };
+  }, [token, kioskId]);
+
+  // Live shared session updates across devices on the same table screen
+  useEffect(() => {
+    if (!kioskId) return;
+
+    const socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
+    socket.emit('join:kiosk', kioskId);
+
+    const reloadSession = () => {
+      fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`))
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.success) return;
+          const orders = ((data.data?.orders as Record<string, unknown>[]) || [])
+            .map((o) => mapApiOrder(o))
+            .filter((o) => isOpenStatus(o.status));
+          setActiveOrderIds(orders.map((o) => o.id));
+          setPlacedOrders(orders);
+        })
+        .catch(() => {});
+    };
+
+    socket.on('kiosk:sessionUpdated', reloadSession);
+
+    return () => {
+      socket.emit('leave:kiosk', kioskId);
+      socket.disconnect();
+    };
+  }, [kioskId]);
 
   const sessionKey = placedOrders.map((order) => order.id).join(',');
 
@@ -326,6 +391,23 @@ export default function Checkout() {
     );
   }
 
+  async function refreshKioskSession(): Promise<PlacedOrder[]> {
+    if (!kioskId) return placedOrdersRef.current;
+    try {
+      const res = await fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`));
+      const data = await res.json();
+      if (!data.success) return placedOrdersRef.current;
+      const orders = ((data.data?.orders as Record<string, unknown>[]) || [])
+        .map((o) => mapApiOrder(o))
+        .filter((o) => isOpenStatus(o.status));
+      setActiveOrderIds(orders.map((o) => o.id));
+      setPlacedOrders(orders);
+      return orders;
+    } catch {
+      return placedOrdersRef.current;
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -336,49 +418,32 @@ export default function Checkout() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      if (openOrders.length > 0 && hasPendingCart) {
-        const source = openOrders[0];
-        const body: Record<string, unknown> = {
-          orderType: 'DINE_IN',
-          items: orderItems,
-        };
-        if (kioskId) body.kioskId = kioskId;
-        if (!user) {
-          body.guestName = guestName || source.guestName;
-          body.guestEmail = guestEmail || source.guestEmail;
-          body.guestPhone = guestPhone || source.guestPhone || undefined;
-        }
-
-        const res = await fetch(apiUrl('/api/orders'), {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to add items to order');
-
-        const created = mapApiOrder(data.data as Record<string, unknown>);
-        clear();
-        addActiveOrderId(created.id);
-        setPlacedOrders((prev) => [...prev, created]);
-        showToast({ type: 'success', title: 'New items added to your order' });
-        setPayTickets([]);
-        setPayIndex(0);
-        setWaitingForPayment(false);
-        return;
+      // For table screens, always know current open tickets before placing
+      let knownOpen = openOrders;
+      if (kioskId) {
+        knownOpen = (await refreshKioskSession()).filter((o) => isOpenStatus(o.status));
       }
 
       const body: Record<string, unknown> = {
         orderType: 'DINE_IN',
         items: orderItems,
-        comment: comment || undefined,
       };
       if (kioskId) body.kioskId = kioskId;
 
-      if (!user) {
-        body.guestName = guestName;
-        body.guestEmail = guestEmail;
-        body.guestPhone = guestPhone || undefined;
+      if (knownOpen.length > 0 && hasPendingCart) {
+        const source = knownOpen[0];
+        if (!user) {
+          body.guestName = guestName || source.guestName;
+          body.guestEmail = guestEmail || source.guestEmail;
+          body.guestPhone = guestPhone || source.guestPhone || undefined;
+        }
+      } else {
+        body.comment = comment || undefined;
+        if (!user) {
+          body.guestName = guestName;
+          body.guestEmail = guestEmail;
+          body.guestPhone = guestPhone || undefined;
+        }
       }
 
       const res = await fetch(apiUrl('/api/orders'), {
@@ -391,9 +456,29 @@ export default function Checkout() {
 
       clear();
       const created = mapApiOrder(data.data as Record<string, unknown>);
-      setActiveOrderId(created.id);
-      setPlacedOrders([created]);
-      showToast({ type: 'success', title: 'Order placed successfully!' });
+
+      if (kioskId) {
+        // Never wipe prior tickets — reload full table session from server
+        addActiveOrderId(created.id);
+        setPlacedOrders((prev) => {
+          if (prev.some((o) => o.id === created.id)) return prev;
+          return [...prev, created];
+        });
+        await refreshKioskSession();
+        showToast({
+          type: 'success',
+          title: knownOpen.length > 0 ? 'New items added to your order' : 'Order placed successfully!',
+        });
+      } else if (knownOpen.length > 0) {
+        addActiveOrderId(created.id);
+        setPlacedOrders((prev) => [...prev, created]);
+        showToast({ type: 'success', title: 'New items added to your order' });
+      } else {
+        setActiveOrderId(created.id);
+        setPlacedOrders([created]);
+        showToast({ type: 'success', title: 'Order placed successfully!' });
+      }
+
       setPayTickets([]);
       setPayIndex(0);
       setWaitingForPayment(false);

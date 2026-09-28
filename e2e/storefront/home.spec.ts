@@ -19,8 +19,8 @@ test.describe('Storefront Home Page', () => {
     await page.goto('/');
     const nav = page.getByRole('navigation');
     await expect(nav.getByRole('link', { name: 'Home' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Locations' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Menu' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Gallery' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Reservations' })).toBeVisible();
   });
 
@@ -39,9 +39,9 @@ test.describe('Storefront Home Page', () => {
 
   test('displays hero CTA buttons', async ({ page }) => {
     await page.goto('/');
-    // CTA text comes from DB seed — accept either seeded or default
-    await expect(page.getByRole('link', { name: /View Menu|Explore Our Menu/ })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Find Location|Reserve a Table/ })).toBeVisible();
+    // Multiple "View Menu" CTAs can exist (hero + bottom) — assert at least one
+    await expect(page.getByRole('link', { name: /View Menu|Explore Our Menu/ }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /Find Location|Reserve a Table|Find a Location/ }).first()).toBeVisible();
   });
 
   test('displays feature cards', async ({ page }) => {
@@ -68,10 +68,10 @@ test.describe('Storefront Home Page', () => {
     await expect(page.getByRole('main').getByRole('link', { name: /Create Account|Order Now/ })).toBeVisible();
   });
 
-  test('Login and Sign Up links visible when not authenticated', async ({ page }) => {
+  test('Login and Sign Up links hidden for dine-in', async ({ page }) => {
     await page.goto('/');
     const header = page.locator('header');
-    await expect(header.getByRole('link', { name: 'Login' })).toBeVisible();
-    await expect(header.getByRole('link', { name: 'Sign Up' })).toBeVisible();
+    await expect(header.getByRole('link', { name: 'Login' })).toHaveCount(0);
+    await expect(header.getByRole('link', { name: 'Sign Up' })).toHaveCount(0);
   });
 });

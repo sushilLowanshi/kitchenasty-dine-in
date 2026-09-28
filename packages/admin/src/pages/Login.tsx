@@ -1,11 +1,74 @@
 import { useState, FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
+import { useAuth } from '../context/AuthContext.js';
+import { portalHome, AuthScope } from '../lib/authStorage.js';
 
-interface Props {
-  onLogin: (token: string) => void;
+type LoginUser = {
+  role: string;
+  locationId?: string | null;
+  location?: { id: string; slug: string; name: string } | null;
+};
+
+async function resolveRestaurantSlug(token: string, user: LoginUser): Promise<string | null> {
+  if (user.location?.slug) return user.location.slug;
+
+  try {
+    const meRes = await fetch(apiUrl('/api/auth/me'), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (meRes.ok) {
+      const meData = await meRes.json();
+      const meUser = meData?.data?.user as LoginUser | undefined;
+      if (meUser?.location?.slug) return meUser.location.slug;
+      if (meUser?.locationId && !user.locationId) {
+        user = { ...user, locationId: meUser.locationId };
+      }
+    }
+  } catch {
+    /* continue */
+  }
+
+  const locationId = user.locationId;
+  if (locationId) {
+    try {
+      const locRes = await fetch(apiUrl(`/api/locations/${locationId}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (locRes.ok) {
+        const locData = await locRes.json();
+        if (locData?.data?.slug) return locData.data.slug as string;
+      }
+    } catch {
+      /* continue */
+    }
+  }
+
+  try {
+    const listRes = await fetch(apiUrl('/api/locations'), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      const first = (listData?.data as { slug?: string }[] | undefined)?.[0];
+      if (first?.slug) return first.slug;
+    }
+  } catch {
+    /* continue */
+  }
+
+  return null;
 }
 
-export default function Login({ onLogin }: Props) {
+function scopeForRole(role: string): AuthScope {
+  if (role === 'MANAGER') return 'manager';
+  if (role === 'STAFF') return 'staff';
+  return 'admin';
+}
+
+export default function Login() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -24,7 +87,29 @@ export default function Login({ onLogin }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
-      onLogin(data.data.token);
+
+      const token = data.data.token as string;
+      const user = data.data.user as LoginUser;
+
+      if (user.role === 'SUPER_ADMIN') {
+        login(token, 'admin');
+        navigate('/', { replace: true });
+        return;
+      }
+
+      if (user.role !== 'MANAGER' && user.role !== 'STAFF') {
+        throw new Error('Unsupported account role');
+      }
+
+      const slug = await resolveRestaurantSlug(token, user);
+      if (!slug) {
+        throw new Error(
+          'No restaurant assigned to this account. Ask your admin to assign a location, then try again.'
+        );
+      }
+
+      login(token, scopeForRole(user.role));
+      navigate(portalHome(slug, user.role), { replace: true });
     } catch (err: any) {
       setError(err.message);
     } finally {

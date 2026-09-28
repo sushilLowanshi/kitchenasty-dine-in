@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { api } from '../lib/api.js';
 import { API_ORIGIN } from '../lib/apiBase.js';
+import { useAuth } from '../context/AuthContext.js';
+import KitchenAddOrderModal from '../components/KitchenAddOrderModal.js';
 
 interface OrderItem {
   id: string;
@@ -42,11 +44,14 @@ const NEXT_ACTION: Record<string, string> = {
 };
 
 export default function KitchenDisplay() {
+  const { user } = useAuth();
+  const canAddOrder = user?.role === 'MANAGER' || user?.role === 'STAFF';
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [addOrderOpen, setAddOrderOpen] = useState(false);
 
   const fetchOrders = useCallback(() => {
     // Fetch active orders (non-completed, non-cancelled)
@@ -185,6 +190,14 @@ export default function KitchenDisplay() {
         </div>
       </div>
 
+      {canAddOrder && (
+        <KitchenAddOrderModal
+          open={addOrderOpen}
+          onClose={() => setAddOrderOpen(false)}
+          onPlaced={fetchOrders}
+        />
+      )}
+
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" role="status" aria-label="Loading" />
@@ -229,6 +242,16 @@ export default function KitchenDisplay() {
                       {statusOrders.length}
                     </span>
                   </div>
+                  {status === 'PENDING' && canAddOrder && (
+                    <button
+                      type="button"
+                      onClick={() => setAddOrderOpen(true)}
+                      className="mt-2 w-full text-xs font-semibold py-1.5 rounded-md bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+                      aria-label="Add order to a table"
+                    >
+                      + Add Order
+                    </button>
+                  )}
                 </div>
 
                 {/* Order cards */}

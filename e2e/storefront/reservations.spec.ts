@@ -31,9 +31,11 @@ test.describe('Storefront Reservations Page', () => {
     await expect(dateInput).toBeVisible();
   });
 
-  test('shows login prompt when not authenticated', async ({ page }) => {
+  test('shows guest booking fields when not authenticated', async ({ page }) => {
     await page.goto('/reservations');
-    await expect(page.getByRole('main').getByRole('link', { name: 'Login' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Login' })).toHaveCount(0);
+    await expect(page.getByPlaceholder('Your name')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Book Table' })).toBeVisible();
   });
 
   test('shows my reservations section', async ({ page }) => {
@@ -46,10 +48,11 @@ test.describe('Storefront Reservations Page', () => {
     await expect(page.locator('textarea')).toBeVisible();
   });
 
-  test('book table button is disabled without login', async ({ page }) => {
+  test('book table button is enabled with form fields for guests', async ({ page }) => {
     await page.goto('/reservations');
     const bookBtn = page.getByRole('button', { name: 'Book Table' });
     await expect(bookBtn).toBeVisible();
+    // Guest booking allowed — button disabled only until location/date/time filled
     await expect(bookBtn).toBeDisabled();
   });
 });

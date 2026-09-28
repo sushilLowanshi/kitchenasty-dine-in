@@ -20,3 +20,4 @@ process.on('uncaughtException', (err) => {
 httpServer.listen(PORT, () => {
   serverLogger.info(`KitchenAsty server running on http://localhost:${PORT}`);
 });
+

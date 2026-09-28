@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MediaAsset } from '../components/MediaPicker.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -21,7 +22,7 @@ export default function DesignMedia() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   async function load() {
     setLoading(true);

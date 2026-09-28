@@ -11,13 +11,11 @@ test.describe('Storefront Locations Page', () => {
     await expect(page.getByText('Find a KitchenAsty near you')).toBeVisible();
   });
 
-  test('navigating to locations from header', async ({ page }) => {
-    await page.goto('/');
-    // Retry the click in case the template swap detaches the nav element
-    await expect(async () => {
-      await page.getByRole('navigation').getByRole('link', { name: 'Locations' }).click();
-      await expect(page).toHaveURL('/locations', { timeout: 2000 });
-    }).toPass({ timeout: 10000 });
+  test('locations page is reachable by URL (header link removed for dine-in)', async ({ page }) => {
+    await page.goto('/locations');
+    await expect(page).toHaveURL(/\/locations/);
     await expect(page.getByRole('heading', { name: 'Our Locations' })).toBeVisible();
+    // Header no longer includes Locations nav
+    await expect(page.getByRole('navigation').getByRole('link', { name: 'Locations' })).toHaveCount(0);
   });
 });

@@ -14,31 +14,52 @@ async function getMailConfig(): Promise<{ transporter: Transporter; from: string
     return { transporter: cachedTransporter, from: cachedFrom };
   }
 
+  // Defaults / .env (Mailhog for local)
   let host = process.env.SMTP_HOST || 'localhost';
-  let port = parseInt(process.env.SMTP_PORT || '1025');
+  let port = parseInt(process.env.SMTP_PORT || '1025', 10) || 1025;
   let secure = false;
-  let user = process.env.SMTP_USER;
-  let pass = process.env.SMTP_PASS;
+  let user: string | undefined = process.env.SMTP_USER || undefined;
+  let pass: string | undefined = process.env.SMTP_PASS || undefined;
   let senderName = 'KitchenAsty';
   let senderEmail = 'noreply@kitchenasty.com';
   let requireTLS = false;
 
+  if (process.env.SMTP_ENCRYPTION === 'ssl') {
+    secure = true;
+  } else if (process.env.SMTP_ENCRYPTION === 'tls') {
+    requireTLS = true;
+  }
+
+  // Admin Settings → Mail wins when configured (real Gmail etc.)
   try {
     const settings = await prisma.siteSettings.findUnique({ where: { id: 'default' } });
     const mail = (settings?.mailSettings as Record<string, any>) || {};
     if (mail.smtpHost) host = mail.smtpHost;
-    if (mail.smtpPort) port = mail.smtpPort;
+    if (mail.smtpPort) port = Number(mail.smtpPort) || port;
     if (mail.smtpUser) user = mail.smtpUser;
     if (mail.smtpPass) pass = mail.smtpPass;
     if (mail.senderName) senderName = mail.senderName;
     if (mail.senderEmail) senderEmail = mail.senderEmail;
-    if (mail.encryption === 'ssl') secure = true;
-    if (mail.encryption === 'tls') requireTLS = true;
+    if (mail.encryption === 'ssl') {
+      secure = true;
+      requireTLS = false;
+    } else if (mail.encryption === 'tls') {
+      secure = false;
+      requireTLS = true;
+    } else if (mail.encryption === 'none') {
+      secure = false;
+      requireTLS = false;
+    }
   } catch {
-    // DB unavailable — fall back to env vars
+    // DB unavailable — keep env / defaults
   }
 
   const from = process.env.EMAIL_FROM || `${senderName} <${senderEmail}>`;
+
+  emailLogger.info(
+    { host, port, secure, requireTLS, hasAuth: Boolean(user && pass), from },
+    'Mail transport configured'
+  );
 
   const transporter = nodemailer.createTransport({
     host,
@@ -67,8 +88,13 @@ interface EmailOptions {
   html: string;
 }
 
-export async function sendEmail(options: EmailOptions): Promise<void> {
-  if (process.env.NODE_ENV === 'test') return;
+export interface SendEmailResult {
+  sent: boolean;
+  error?: string;
+}
+
+export async function sendEmail(options: EmailOptions): Promise<SendEmailResult> {
+  if (process.env.NODE_ENV === 'test') return { sent: true };
 
   try {
     const { transporter, from } = await getMailConfig();
@@ -78,8 +104,12 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
       subject: options.subject,
       html: options.html,
     });
+    emailLogger.info({ to: options.to, subject: options.subject }, 'Email sent');
+    return { sent: true };
   } catch (err) {
-    emailLogger.error({ err }, 'Failed to send email');
+    const message = err instanceof Error ? err.message : 'Failed to send email';
+    emailLogger.error({ err, to: options.to }, 'Failed to send email');
+    return { sent: false, error: message };
   }
 }
 
@@ -167,10 +197,11 @@ export function staffInvitationEmail(invite: {
         <div style="padding:24px;background:white;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
           <h2 style="margin:0 0 8px">You're Invited!</h2>
           <p style="color:#6b7280;margin:0 0 16px">You've been invited to join the KitchenAsty team as <strong>${invite.role.replace(/_/g, ' ')}</strong>.</p>
+          <p style="color:#6b7280;margin:0 0 16px">Click the button below to verify your email and create your password. This link works only once and expires in 7 days.</p>
           <div style="text-align:center;margin:24px 0">
-            <a href="${invite.inviteLink}" style="display:inline-block;background:#f97316;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px">Accept Invitation</a>
+            <a href="${invite.inviteLink}" style="display:inline-block;background:#f97316;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px">Accept Invitation &amp; Set Password</a>
           </div>
-          <p style="color:#6b7280;font-size:14px">This invitation expires in 7 days. If you didn't expect this invitation, you can safely ignore this email.</p>
+          <p style="color:#6b7280;font-size:14px">If you didn't expect this invitation, you can safely ignore this email.</p>
         </div>
       </div>
     `,

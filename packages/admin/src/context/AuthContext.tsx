@@ -1,29 +1,58 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
+import {
+  AuthScope,
+  clearStoredToken,
+  getStoredToken,
+  scopeFromPath,
+  setStoredToken,
+} from '../lib/authStorage.js';
 
-interface User {
+export interface UserLocation {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface User {
   id: string;
   email: string;
   name: string;
   role: 'SUPER_ADMIN' | 'MANAGER' | 'STAFF';
   phone?: string | null;
   avatar?: string | null;
+  locationId?: string | null;
+  location?: UserLocation | null;
 }
 
 interface AuthContextValue {
   token: string;
   user: User | null;
   loading: boolean;
-  login: (token: string) => void;
+  scope: AuthScope;
+  login: (token: string, scope?: AuthScope) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token') || '');
+  const location = useLocation();
+  const scope = scopeFromPath(location.pathname);
+  const [token, setToken] = useState(() => getStoredToken(scope));
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(!!localStorage.getItem('token'));
+  const [loading, setLoading] = useState(() => !!getStoredToken(scope));
+
+  // Switch token when moving between admin ↔ restaurant URL trees
+  useEffect(() => {
+    const next = getStoredToken(scope);
+    setToken(next);
+    if (!next) {
+      setUser(null);
+      setLoading(false);
+    }
+  }, [scope]);
 
   useEffect(() => {
     if (!token) {
@@ -49,8 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) {
-          // Token invalid — clear it
-          localStorage.removeItem('token');
+          clearStoredToken(scope);
           setToken('');
           setUser(null);
         }
@@ -62,21 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, scope]);
 
-  function login(newToken: string) {
-    localStorage.setItem('token', newToken);
+  function login(newToken: string, loginScope?: AuthScope) {
+    const s = loginScope ?? scope;
+    setStoredToken(newToken, s);
     setToken(newToken);
   }
 
   function logout() {
-    localStorage.removeItem('token');
+    clearStoredToken(scope);
     setToken('');
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, scope, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -139,6 +139,7 @@ model Location {
   updatedAt DateTime @updatedAt
 
   staff          User[]
+  inviteTokens   InviteToken[]
   categories     Category[]
   menuItems      MenuItem[]
   mealtimes      Mealtime[]
@@ -503,9 +504,22 @@ model TableKiosk {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  table Table     @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  cart  TableCart?
 
   @@map("table_kiosks")
+}
+
+// Shared draft cart for a table screen — same across all devices on /t/:kioskId
+model TableCart {
+  id        String     @id @default(cuid())
+  kioskId   String     @unique
+  kiosk     TableKiosk @relation(fields: [kioskId], references: [id], onDelete: Cascade)
+  items     Json       @default("[]")
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
+
+  @@map("table_carts")
 }
 
 model Reservation {
@@ -715,14 +729,16 @@ model CookieConsent {
 }
 
 model InviteToken {
-  id        String    @id @default(cuid())
-  token     String    @unique
-  email     String
-  role      Role      @default(STAFF)
-  invitedBy String
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  id         String    @id @default(cuid())
+  token      String    @unique
+  email      String
+  role       Role      @default(STAFF)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  invitedBy  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
   @@map("invite_tokens")
 }
 

@@ -34,6 +34,19 @@ export function initSocket(httpServer: HttpServer): Server {
     socket.on('leave:kitchen', () => {
       socket.leave('kitchen');
     });
+
+    // Shared table-screen cart / session (all devices on same /t/:kioskId)
+    socket.on('join:kiosk', (kioskId: string) => {
+      if (typeof kioskId === 'string' && kioskId.length > 0) {
+        socket.join(`kiosk:${kioskId}`);
+      }
+    });
+
+    socket.on('leave:kiosk', (kioskId: string) => {
+      if (typeof kioskId === 'string' && kioskId.length > 0) {
+        socket.leave(`kiosk:${kioskId}`);
+      }
+    });
   });
 
   return io;
@@ -141,4 +154,14 @@ export function emitPaymentCompleted(payload: {
   if (!io) return;
   io.to(`order:${payload.orderId}`).emit('payment:completed', payload);
   io.to('kitchen').emit('payment:completed', payload);
+}
+
+export function emitKioskCartUpdated(kioskId: string, items: unknown[]): void {
+  if (!io) return;
+  io.to(`kiosk:${kioskId}`).emit('kiosk:cartUpdated', { kioskId, items });
+}
+
+export function emitKioskSessionUpdated(kioskId: string): void {
+  if (!io) return;
+  io.to(`kiosk:${kioskId}`).emit('kiosk:sessionUpdated', { kioskId });
 }

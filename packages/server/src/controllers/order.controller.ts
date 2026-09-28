@@ -5,6 +5,8 @@ import { emitNewOrder, emitOrderStatusUpdate } from '../lib/socket.js';
 import { isPointInPolygon } from '../lib/geo.js';
 import { sendEmail, orderConfirmationEmail, orderStatusEmail } from '../lib/email.js';
 import { auditLog } from '../lib/audit.js';
+import { assertLocationAccess, getStaffLocationId } from '../lib/locationScope.js';
+import { clearTableKioskCart, notifyKioskSession } from './tableCart.controller.js';
 
 const orderItemOptionSchema = z.object({
   menuOptionValueId: z.string().min(1),
@@ -405,6 +407,16 @@ export async function createOrder(req: Request, res: Response): Promise<void> {
     table: order.table,
   });
 
+  // Shared table screen: notify devices. Only clear draft cart for guest/customer place
+  // (staff add-from-kitchen must not wipe what guests are still browsing).
+  if (kioskId) {
+    const isStaff = (req as { user?: { type?: string } }).user?.type === 'staff';
+    if (!isStaff) {
+      await clearTableKioskCart(kioskId).catch(() => {});
+    }
+    notifyKioskSession(kioskId);
+  }
+
   // Emit event for automation rules
   try {
     const { appEvents } = await import('../lib/events.js');
@@ -568,6 +580,9 @@ export async function listOrders(req: Request, res: Response): Promise<void> {
   }
   if (orderType) where.orderType = orderType;
 
+  const staffLocationId = await getStaffLocationId(req);
+  if (staffLocationId) where.locationId = staffLocationId;
+
   const [orders, total] = await Promise.all([
     prisma.order.findMany({
       where,
@@ -622,6 +637,14 @@ export async function getOrder(req: Request<{ id: string }>, res: Response): Pro
   if (user?.type === 'customer' && order.customerId && order.customerId !== user.id) {
     res.status(403).json({ success: false, error: 'Access denied' });
     return;
+  }
+
+  if (user?.type === 'staff') {
+    const scopeError = await assertLocationAccess(req, order.locationId);
+    if (scopeError) {
+      res.status(403).json({ success: false, error: scopeError });
+      return;
+    }
   }
 
   res.json({ success: true, data: order });
@@ -686,6 +709,12 @@ export async function updateOrderStatus(req: Request<{ id: string }>, res: Respo
     return;
   }
 
+  const scopeError = await assertLocationAccess(req, order.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   const updated = await prisma.order.update({
     where: { id },
     data: { status },
@@ -743,6 +772,14 @@ export async function cancelOrder(req: Request<{ id: string }>, res: Response): 
     return;
   }
 
+  if (user?.type === 'staff') {
+    const scopeError = await assertLocationAccess(req, order.locationId);
+    if (scopeError) {
+      res.status(403).json({ success: false, error: scopeError });
+      return;
+    }
+  }
+
   if (!['CONFIRMED', 'PENDING'].includes(order.status)) {
     res.status(400).json({
       success: false,
@@ -772,6 +809,14 @@ export async function cancelOrder(req: Request<{ id: string }>, res: Response): 
     items: updated.items.map((item) => ({ name: item.name, quantity: item.quantity })),
     cancelledByCustomer: true,
   });
+
+  if (updated.table?.id) {
+    const kiosk = await prisma.tableKiosk.findUnique({
+      where: { tableId: updated.table.id },
+      select: { id: true },
+    });
+    if (kiosk) notifyKioskSession(kiosk.id);
+  }
 
   const recipientEmail = order.customer?.email || order.guestEmail;
   if (recipientEmail) {

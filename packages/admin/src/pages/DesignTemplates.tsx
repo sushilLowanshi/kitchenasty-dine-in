@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface TemplateDef {
   id: string;
@@ -296,7 +297,7 @@ const previewComponents: Record<string, React.FC> = {
 /* ── Main page ──────────────────────────────────────────────── */
 
 export default function DesignTemplates() {
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
