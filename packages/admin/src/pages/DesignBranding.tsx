@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 export default function DesignBranding() {
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

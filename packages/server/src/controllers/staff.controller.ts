@@ -6,6 +6,12 @@ import prisma from '../lib/db.js';
 import { generateToken } from '../middleware/auth.js';
 import { sendEmail, staffInvitationEmail } from '../lib/email.js';
 import { auditLog } from '../lib/audit.js';
+import {
+  findActiveManager,
+  findPendingManagerInvite,
+  getStaffLocationId,
+  isSuperAdmin,
+} from '../lib/locationScope.js';
 
 // ============================================================
 // LIST STAFF
@@ -18,7 +24,7 @@ export async function listStaff(req: Request, res: Response): Promise<void> {
   const search = req.query.search as string | undefined;
   const isActive = req.query.isActive as string | undefined;
 
-  const where: any = {};
+  const where: Record<string, unknown> = {};
   if (role && ['SUPER_ADMIN', 'MANAGER', 'STAFF'].includes(role)) {
     where.role = role;
   }
@@ -30,6 +36,16 @@ export async function listStaff(req: Request, res: Response): Promise<void> {
       { name: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } },
     ];
+  }
+
+  // Managers only see users for their restaurant
+  if (!isSuperAdmin(req)) {
+    const locationId = await getStaffLocationId(req);
+    if (!locationId) {
+      res.status(403).json({ success: false, error: 'No location assigned to your account' });
+      return;
+    }
+    where.locationId = locationId;
   }
 
   const [staff, total] = await Promise.all([
@@ -91,6 +107,14 @@ export async function getStaff(req: Request<{ id: string }>, res: Response): Pro
     return;
   }
 
+  if (!isSuperAdmin(req)) {
+    const locationId = await getStaffLocationId(req);
+    if (!locationId || user.locationId !== locationId) {
+      res.status(403).json({ success: false, error: 'Access denied for this staff member' });
+      return;
+    }
+  }
+
   res.json({ success: true, data: user });
 }
 
@@ -127,6 +151,58 @@ export async function updateStaff(req: Request<{ id: string }>, res: Response): 
     return;
   }
 
+  const actorIsAdmin = isSuperAdmin(req);
+
+  if (!actorIsAdmin) {
+    const locationId = await getStaffLocationId(req);
+    if (!locationId || existing.locationId !== locationId) {
+      res.status(403).json({ success: false, error: 'Access denied for this staff member' });
+      return;
+    }
+    // Managers may only manage STAFF in their restaurant
+    if (existing.role !== 'STAFF') {
+      res.status(403).json({ success: false, error: 'Managers can only update staff members' });
+      return;
+    }
+    if (parsed.data.role && parsed.data.role !== 'STAFF') {
+      res.status(403).json({ success: false, error: 'Managers cannot change roles' });
+      return;
+    }
+    if (parsed.data.locationId !== undefined && parsed.data.locationId !== locationId) {
+      res.status(403).json({ success: false, error: 'Cannot move staff to another location' });
+      return;
+    }
+    // Force location stay put
+    delete (parsed.data as { locationId?: string | null }).locationId;
+  }
+
+  // 1 active manager per location when promoting / assigning
+  if (parsed.data.role === 'MANAGER' || (existing.role === 'MANAGER' && parsed.data.locationId)) {
+    const targetLocationId =
+      parsed.data.locationId !== undefined ? parsed.data.locationId : existing.locationId;
+    if (targetLocationId) {
+      const activeManager = await findActiveManager(targetLocationId);
+      if (activeManager && activeManager.id !== targetId) {
+        res.status(409).json({
+          success: false,
+          error: 'This location already has an active manager. Deactivate them first.',
+        });
+        return;
+      }
+    }
+  }
+
+  if (existing.role === 'MANAGER' && parsed.data.isActive === true && existing.locationId) {
+    const activeManager = await findActiveManager(existing.locationId);
+    if (activeManager && activeManager.id !== targetId) {
+      res.status(409).json({
+        success: false,
+        error: 'This location already has an active manager. Deactivate them first.',
+      });
+      return;
+    }
+  }
+
   const user = await prisma.user.update({
     where: { id: targetId },
     data: parsed.data,
@@ -154,7 +230,6 @@ export async function updateStaff(req: Request<{ id: string }>, res: Response): 
 export async function deactivateStaff(req: Request<{ id: string }>, res: Response): Promise<void> {
   const targetId = req.params.id;
 
-  // Prevent self-deactivation
   if (req.user!.id === targetId) {
     res.status(400).json({ success: false, error: 'Cannot deactivate your own account' });
     return;
@@ -164,6 +239,14 @@ export async function deactivateStaff(req: Request<{ id: string }>, res: Respons
   if (!existing) {
     res.status(404).json({ success: false, error: 'Staff member not found' });
     return;
+  }
+
+  if (!isSuperAdmin(req)) {
+    const locationId = await getStaffLocationId(req);
+    if (!locationId || existing.locationId !== locationId || existing.role !== 'STAFF') {
+      res.status(403).json({ success: false, error: 'Managers can only deactivate staff in their location' });
+      return;
+    }
   }
 
   await prisma.user.update({
@@ -177,6 +260,57 @@ export async function deactivateStaff(req: Request<{ id: string }>, res: Respons
 }
 
 // ============================================================
+// INVITE HELPERS
+// ============================================================
+
+export async function createAndSendInvite(opts: {
+  email: string;
+  role: 'SUPER_ADMIN' | 'MANAGER' | 'STAFF';
+  locationId: string | null;
+  invitedBy: string;
+  req: Request;
+}) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const invite = await prisma.inviteToken.create({
+    data: {
+      token,
+      email: opts.email,
+      role: opts.role,
+      locationId: opts.locationId,
+      invitedBy: opts.invitedBy,
+      expiresAt,
+    },
+  });
+
+  const adminUrl = process.env.ADMIN_URL || 'http://localhost:5173';
+  const inviteLink = `${adminUrl}/accept-invite?token=${token}`;
+  const emailContent = staffInvitationEmail({ email: opts.email, role: opts.role, inviteLink });
+  const mailResult = await sendEmail({ to: opts.email, ...emailContent });
+
+  auditLog(opts.req, {
+    action: 'create',
+    entity: 'Staff',
+    entityId: invite.id,
+    details: {
+      email: opts.email,
+      role: opts.role,
+      locationId: opts.locationId,
+      emailSent: mailResult.sent,
+      emailError: mailResult.error,
+    },
+  });
+
+  return {
+    invite,
+    inviteLink,
+    emailSent: mailResult.sent,
+    emailError: mailResult.error ?? null,
+  };
+}
+
+// ============================================================
 // INVITE STAFF
 // ============================================================
 
@@ -184,6 +318,7 @@ const inviteStaffSchema = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   role: z.enum(['SUPER_ADMIN', 'MANAGER', 'STAFF']).optional(),
+  locationId: z.string().optional(),
 });
 
 export async function inviteStaff(req: Request, res: Response): Promise<void> {
@@ -193,43 +328,85 @@ export async function inviteStaff(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const { email, role } = parsed.data;
+  const actorIsAdmin = isSuperAdmin(req);
+  let role = parsed.data.role || 'STAFF';
+  let locationId: string | null = parsed.data.locationId ?? null;
 
-  // Check if user already exists
+  if (!actorIsAdmin) {
+    // Managers may only invite STAFF for their own restaurant
+    if (role !== 'STAFF') {
+      res.status(403).json({ success: false, error: 'Managers can only invite staff members' });
+      return;
+    }
+    const managerLocationId = await getStaffLocationId(req);
+    if (!managerLocationId) {
+      res.status(403).json({ success: false, error: 'No location assigned to your account' });
+      return;
+    }
+    locationId = managerLocationId;
+    role = 'STAFF';
+  } else {
+    // Super admin: SUPER_ADMIN invites need no location; MANAGER/STAFF need a location
+    if (role === 'SUPER_ADMIN') {
+      locationId = null;
+    } else if (!locationId) {
+      res.status(400).json({ success: false, error: 'locationId is required for manager and staff invites' });
+      return;
+    } else {
+      const location = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!location) {
+        res.status(404).json({ success: false, error: 'Location not found' });
+        return;
+      }
+    }
+  }
+
+  const { email } = parsed.data;
+
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     res.status(409).json({ success: false, error: 'A user with this email already exists' });
     return;
   }
 
-  const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  if (role === 'MANAGER' && locationId) {
+    const activeManager = await findActiveManager(locationId);
+    if (activeManager) {
+      res.status(409).json({
+        success: false,
+        error: `This location already has an active manager (${activeManager.email}). Deactivate them before inviting a replacement.`,
+      });
+      return;
+    }
+    const pending = await findPendingManagerInvite(locationId);
+    if (pending) {
+      res.status(409).json({
+        success: false,
+        error: `A pending manager invite already exists for ${pending.email}`,
+      });
+      return;
+    }
+  }
 
-  const invite = await prisma.inviteToken.create({
-    data: {
-      token,
-      email,
-      role: role || 'STAFF',
-      invitedBy: req.user!.id,
-      expiresAt,
-    },
+  const result = await createAndSendInvite({
+    email,
+    role,
+    locationId,
+    invitedBy: req.user!.id,
+    req,
   });
-
-  // Send invitation email
-  const adminUrl = process.env.ADMIN_URL || 'http://localhost:5173';
-  const inviteLink = `${adminUrl}/accept-invite?token=${token}`;
-  const emailContent = staffInvitationEmail({ email, role: role || 'STAFF', inviteLink });
-  await sendEmail({ to: email, ...emailContent });
-
-  auditLog(req, { action: 'create', entity: 'Staff', entityId: invite.id, details: { email, role: role || 'STAFF' } });
 
   res.status(201).json({
     success: true,
     data: {
-      id: invite.id,
-      email: invite.email,
-      role: invite.role,
-      expiresAt: invite.expiresAt,
+      id: result.invite.id,
+      email: result.invite.email,
+      role: result.invite.role,
+      locationId: result.invite.locationId,
+      expiresAt: result.invite.expiresAt,
+      inviteLink: result.inviteLink,
+      emailSent: result.emailSent,
+      emailError: result.emailError,
     },
   });
 }
@@ -241,6 +418,7 @@ export async function inviteStaff(req: Request, res: Response): Promise<void> {
 export async function validateInviteToken(req: Request<{ token: string }>, res: Response): Promise<void> {
   const invite = await prisma.inviteToken.findUnique({
     where: { token: req.params.token },
+    include: { location: { select: { id: true, name: true } } },
   });
 
   if (!invite) {
@@ -263,6 +441,8 @@ export async function validateInviteToken(req: Request<{ token: string }>, res: 
     data: {
       email: invite.email,
       role: invite.role,
+      locationId: invite.locationId,
+      locationName: invite.location?.name ?? null,
     },
   });
 }
@@ -302,7 +482,22 @@ export async function acceptInvite(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Check if email already taken
+  if (invite.role === 'MANAGER' && invite.locationId) {
+    const activeManager = await findActiveManager(invite.locationId);
+    if (activeManager) {
+      res.status(409).json({
+        success: false,
+        error: 'This location already has an active manager',
+      });
+      return;
+    }
+  }
+
+  if ((invite.role === 'MANAGER' || invite.role === 'STAFF') && !invite.locationId) {
+    res.status(400).json({ success: false, error: 'Invite is missing a location assignment' });
+    return;
+  }
+
   const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
   if (existingUser) {
     res.status(409).json({ success: false, error: 'A user with this email already exists' });
@@ -318,8 +513,16 @@ export async function acceptInvite(req: Request, res: Response): Promise<void> {
         password: hashedPassword,
         name,
         role: invite.role,
+        locationId: invite.locationId,
       },
-      select: { id: true, email: true, name: true, role: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        locationId: true,
+        location: { select: { id: true, slug: true, name: true } },
+      },
     }),
     prisma.inviteToken.update({
       where: { id: invite.id },

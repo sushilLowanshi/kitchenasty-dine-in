@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface Review {
   id: string;
@@ -36,7 +37,7 @@ export default function ReviewList() {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('');
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     setLoading(true);

@@ -1,0 +1,25 @@
+﻿export async function deleteTable(req: Request<{ locationId: string; tableId: string }>, res: Response): Promise<void> {
+  const { locationId, tableId } = req.params;
+
+  const table = await prisma.table.findFirst({
+    where: { id: tableId, locationId },
+  });
+  if (!table) {
+    res.status(404).json({ success: false, error: 'Table not found' });
+    return;
+  }
+
+  const reservationCount = await prisma.reservation.count({
+    where: { tableId },
+  });
+  if (reservationCount > 0) {
+    res.status(409).json({
+      success: false,
+      error: 'Cannot delete table with existing reservations. Deactivate it instead.',
+    });
+    return;
+  }
+
+  await prisma.table.delete({ where: { id: tableId } });
+  res.json({ success: true, message: 'Table deleted' });
+}

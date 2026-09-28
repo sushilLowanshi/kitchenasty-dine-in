@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface Coupon {
   id: string;
@@ -37,7 +38,7 @@ export default function CouponList() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     setLoading(true);

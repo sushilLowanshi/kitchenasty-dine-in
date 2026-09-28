@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { AppLink as Link } from '../components/AppLink.js';
 import { api } from '../lib/api.js';
+import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
+import { useAuth } from '../context/AuthContext.js';
 
 interface MenuItem {
   id: string;
@@ -28,6 +31,9 @@ interface MenuItemResponse {
 }
 
 export default function MenuItemList() {
+  const { user } = useAuth();
+  const isManager = user?.role === 'MANAGER';
+  const fileRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +41,8 @@ export default function MenuItemList() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   const fetchItems = (page = 1) => {
     setLoading(true);
@@ -71,17 +79,111 @@ export default function MenuItemList() {
     }
   };
 
+  const downloadTemplate = async () => {
+    try {
+      const token = getStoredToken();
+      const res = await fetch(apiUrl('/api/menu/items/import-template'), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Failed to download template');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'menu-items-import-template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || 'Download failed');
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    setImportMsg(null);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await api.upload<{
+        success: boolean;
+        data: { created: number; failed: number; errors: { row: number; error: string }[] };
+        error?: string;
+      }>('/menu/items/import', form);
+
+      const parts = [`Imported ${res.data.created} item(s)`];
+      if (res.data.failed > 0) {
+        parts.push(`${res.data.failed} row(s) failed`);
+        const sample = res.data.errors.slice(0, 3).map((e) => `row ${e.row}: ${e.error}`).join('; ');
+        if (sample) parts.push(sample);
+      }
+      setImportMsg(parts.join('. '));
+      api.get<{ data: Category[] }>('/menu/categories').then((r) => setCategories(r.data)).catch(() => {});
+      fetchItems(1);
+    } catch (err: any) {
+      setError(err.message || 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-2xl font-semibold text-gray-800">Menu Items</h2>
-        <Link
-          to="/menu/items/new"
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-        >
-          Add Item
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {isManager && (
+            <>
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                Download Excel Template
+              </button>
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+                className="border border-primary-600 text-primary-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-50 transition-colors disabled:opacity-50"
+              >
+                {importing ? 'Importing...' : 'Import Excel'}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImportFile(f);
+                }}
+              />
+            </>
+          )}
+          <Link
+            to="/menu/items/new"
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+          >
+            Add Item
+          </Link>
+        </div>
       </div>
+
+      {isManager && (
+        <p className="text-sm text-gray-500 mb-4">
+          Excel columns: <code className="text-xs bg-gray-100 px-1 rounded">name</code>,{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">price</code>,{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">category</code>,{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">image</code> (URL), optional slug / description / isActive / sortOrder / trackStock / stockQty.
+          Missing categories are created for your restaurant.
+        </p>
+      )}
+
+      {importMsg && (
+        <p className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{importMsg}</p>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow p-4 mb-6 flex gap-4">
@@ -190,7 +292,6 @@ export default function MenuItemList() {
             </table>
           </div>
 
-          {/* Pagination */}
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-between mt-4">
               <p className="text-sm text-gray-500">{pagination.total} items total</p>

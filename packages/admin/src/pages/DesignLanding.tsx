@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface HeroSection {
   title?: string;
@@ -25,7 +26,7 @@ interface CtaSection {
 }
 
 export default function DesignLanding() {
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

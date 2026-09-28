@@ -24,11 +24,21 @@ vi.mock('../../lib/db.js', () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findFirst: vi.fn() },
     customer: { findUnique: vi.fn() },
+    inviteToken: { create: vi.fn(), findFirst: vi.fn() },
   };
   return { default: mockPrisma, prisma: mockPrisma };
 });
+
+vi.mock('../../lib/email.js', () => ({
+  sendEmail: vi.fn().mockResolvedValue({ sent: true }),
+  staffInvitationEmail: vi.fn().mockReturnValue({ subject: 'Invite', html: '' }),
+}));
+
+vi.mock('../../lib/audit.js', () => ({
+  auditLog: vi.fn(),
+}));
 
 import prisma from '../../lib/db.js';
 const mockedPrisma = vi.mocked(prisma);
@@ -133,6 +143,7 @@ describe('Location API - Integration Tests', () => {
       address: '456 High St',
       city: 'San Francisco',
       postalCode: '94110',
+      managerEmail: 'owner@uptown.com',
     };
 
     it('requires authentication', async () => {
@@ -140,7 +151,7 @@ describe('Location API - Integration Tests', () => {
       expect(res.status).toBe(401);
     });
 
-    it('requires SUPER_ADMIN or MANAGER role', async () => {
+    it('requires SUPER_ADMIN role', async () => {
       const res = await request(app)
         .post('/api/locations')
         .set('Authorization', `Bearer ${staffToken}`)
@@ -156,6 +167,15 @@ describe('Location API - Integration Tests', () => {
       expect(res.status).toBe(403);
     });
 
+    it('rejects MANAGER token (super admin only)', async () => {
+      const res = await request(app)
+        .post('/api/locations')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send(newLocation);
+
+      expect(res.status).toBe(403);
+    });
+
     it('returns 409 for duplicate slug', async () => {
       mockedPrisma.location.findUnique.mockResolvedValue(sampleLocation as any);
 
@@ -167,17 +187,35 @@ describe('Location API - Integration Tests', () => {
       expect(res.status).toBe(409);
     });
 
-    it('creates location with MANAGER token', async () => {
+    it('creates location with SUPER_ADMIN token and manager invite', async () => {
       mockedPrisma.location.findUnique.mockResolvedValue(null);
+      mockedPrisma.user.findUnique.mockResolvedValue(null);
       mockedPrisma.location.create.mockResolvedValue({ id: 'loc-2', ...newLocation } as any);
+      mockedPrisma.inviteToken.create.mockResolvedValue({
+        id: 'inv-1',
+        email: 'owner@uptown.com',
+        role: 'MANAGER',
+        locationId: 'loc-2',
+        expiresAt: new Date(),
+      } as any);
 
       const res = await request(app)
         .post('/api/locations')
-        .set('Authorization', `Bearer ${managerToken}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .send(newLocation);
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
+    });
+
+    it('requires managerEmail', async () => {
+      const { managerEmail: _, ...withoutManager } = newLocation;
+      const res = await request(app)
+        .post('/api/locations')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(withoutManager);
+
+      expect(res.status).toBe(400);
     });
 
     it('validates slug format', async () => {

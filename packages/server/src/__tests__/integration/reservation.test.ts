@@ -14,7 +14,7 @@ vi.mock('../../lib/db.js', () => {
     reservation: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn(), groupBy: vi.fn(), aggregate: vi.fn() },
     $queryRaw: vi.fn(),
     user: { findUnique: vi.fn() },
-    customer: { findUnique: vi.fn() },
+    customer: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     category: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
   };
   return { default: mockPrisma, prisma: mockPrisma };
@@ -56,11 +56,32 @@ beforeEach(() => {
 
 describe('Reservation API', () => {
   describe('POST /api/reservations', () => {
-    it('returns 401 without auth', async () => {
+    it('creates guest reservation without auth', async () => {
+      mockedPrisma.customer.findUnique.mockResolvedValueOnce(null);
+      mockedPrisma.customer.create.mockResolvedValueOnce({
+        id: 'guest-1',
+        email: 'guest@dinein.local',
+        name: 'Guest',
+        isGuest: true,
+      } as any);
+      mockedPrisma.location.findUnique.mockResolvedValueOnce(sampleLocation as any);
+      mockedPrisma.reservation.create.mockResolvedValueOnce({
+        ...sampleReservation,
+        customerId: 'guest-1',
+      } as any);
+
       const res = await request(app).post('/api/reservations').send({
-        locationId: 'loc-1', date: '2026-03-15', time: '19:00', partySize: 4,
+        locationId: 'loc-1',
+        date: '2026-03-15',
+        time: '19:00',
+        partySize: 4,
+        guestName: 'Guest',
+        guestEmail: 'guest@dinein.local',
       });
-      expect(res.status).toBe(401);
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.partySize).toBe(4);
+      expect(mockedPrisma.customer.create).toHaveBeenCalled();
     });
 
     it('returns 400 for invalid data', async () => {

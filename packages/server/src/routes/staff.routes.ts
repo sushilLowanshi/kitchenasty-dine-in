@@ -18,9 +18,9 @@ router.post('/accept-invite', acceptInvite);
 
 // Authenticated routes
 router.get('/', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), listStaff);
-router.post('/invite', authenticate, requireStaff, requireRole('SUPER_ADMIN'), inviteStaff);
+router.post('/invite', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), inviteStaff);
 router.get('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), getStaff);
-router.patch('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN'), updateStaff);
-router.delete('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN'), deactivateStaff);
+router.patch('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), updateStaff);
+router.delete('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), deactivateStaff);
 
 export default router;

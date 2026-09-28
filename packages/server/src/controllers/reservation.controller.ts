@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import prisma from '../lib/db.js';
+import { assertLocationAccess, getStaffLocationId } from '../lib/locationScope.js';
 
 const createReservationSchema = z.object({
   locationId: z.string().min(1),
@@ -105,8 +106,14 @@ export async function listReservations(req: Request, res: Response): Promise<voi
 
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
-  if (locationId) where.locationId = locationId;
   if (date) where.date = new Date(date);
+
+  const staffLocationId = await getStaffLocationId(req);
+  if (staffLocationId) {
+    where.locationId = staffLocationId;
+  } else if (locationId) {
+    where.locationId = locationId;
+  }
 
   const [reservations, total] = await Promise.all([
     prisma.reservation.findMany({
@@ -147,6 +154,12 @@ export async function getReservation(req: Request<{ id: string }>, res: Response
     return;
   }
 
+  const scopeError = await assertLocationAccess(req, reservation.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   res.json({ success: true, data: reservation });
 }
 
@@ -161,6 +174,12 @@ export async function updateReservation(req: Request<{ id: string }>, res: Respo
   const existing = await prisma.reservation.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ success: false, error: 'Reservation not found' });
+    return;
+  }
+
+  const scopeError = await assertLocationAccess(req, existing.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
     return;
   }
 
@@ -191,6 +210,12 @@ export async function deleteReservation(req: Request<{ id: string }>, res: Respo
   const existing = await prisma.reservation.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ success: false, error: 'Reservation not found' });
+    return;
+  }
+
+  const scopeError = await assertLocationAccess(req, existing.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
     return;
   }
 
@@ -234,7 +259,9 @@ export async function listCustomerReservations(req: Request, res: Response): Pro
 
 export async function getReservationAnalytics(req: Request, res: Response): Promise<void> {
   const days = Math.min(365, Math.max(7, parseInt(req.query.days as string) || 30));
-  const locationId = req.query.locationId as string | undefined;
+  const queryLocationId = req.query.locationId as string | undefined;
+  const staffLocationId = await getStaffLocationId(req);
+  const locationId = staffLocationId || queryLocationId;
 
   const now = new Date();
   const startDate = new Date(now);

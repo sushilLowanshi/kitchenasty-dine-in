@@ -12,6 +12,7 @@ export default function AcceptInvite() {
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('');
+  const [locationName, setLocationName] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -33,6 +34,7 @@ export default function AcceptInvite() {
         if (!data.success) throw new Error(data.error || 'Invalid invite');
         setEmail(data.data.email);
         setRole(data.data.role);
+        setLocationName(data.data.locationName || null);
       })
       .catch((err) => setTokenError(err.message))
       .finally(() => setValidating(false));
@@ -58,8 +60,19 @@ export default function AcceptInvite() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to accept invite');
 
-      login(data.data.token);
-      navigate('/');
+      const role = data.data.user?.role as string | undefined;
+      const slug = data.data.user?.location?.slug as string | undefined;
+
+      if (role === 'SUPER_ADMIN') {
+        login(data.data.token, 'admin');
+        navigate('/', { replace: true });
+      } else if ((role === 'MANAGER' || role === 'STAFF') && slug) {
+        login(data.data.token, role === 'MANAGER' ? 'manager' : 'staff');
+        navigate(`/${slug}/${role === 'MANAGER' ? 'manager' : 'staff'}/`, { replace: true });
+      } else {
+        login(data.data.token, role === 'MANAGER' ? 'manager' : role === 'STAFF' ? 'staff' : 'admin');
+        navigate('/', { replace: true });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -112,6 +125,12 @@ export default function AcceptInvite() {
               You've been invited as <strong>{ROLE_LABELS[role] || role}</strong>
             </p>
             <p className="text-xs text-gray-400 mt-1">{email}</p>
+            {locationName ? (
+              <p className="text-xs text-gray-500 mt-1">Restaurant: <strong>{locationName}</strong></p>
+            ) : null}
+            <p className="text-xs text-gray-500 mt-2">
+              Opening this invite verifies your email. Set a password below to finish setup.
+            </p>
           </div>
 
           {error && (

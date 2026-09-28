@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface AnalyticsData {
   summary: {
@@ -55,7 +56,7 @@ export default function ReservationTrends() {
   const [days, setDays] = useState(30);
   const [locationId, setLocationId] = useState<string>('');
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     fetch(apiUrl('/api/locations'), { headers: { Authorization: `Bearer ${token}` } })
