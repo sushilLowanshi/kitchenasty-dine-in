@@ -1,7 +1,8 @@
 import { apiUrl } from './apiBase.js';
+import { getStoredToken } from './authStorage.js';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -30,7 +31,7 @@ export const api = {
   delete: <T>(path: string) =>
     request<T>(path, { method: 'DELETE' }),
   upload: async <T>(path: string, formData: FormData): Promise<T> => {
-    const token = localStorage.getItem('token');
+    const token = getStoredToken();
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
 

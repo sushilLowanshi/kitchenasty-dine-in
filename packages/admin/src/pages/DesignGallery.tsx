@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 type Category = 'FOOD' | 'INTERIOR' | 'GARDEN' | 'EVENTS';
 
@@ -47,7 +48,7 @@ export default function DesignGallery() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
   const authHeaders = { Authorization: `Bearer ${token}` };
 
   async function load() {

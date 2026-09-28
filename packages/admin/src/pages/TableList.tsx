@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
+import QRCode from 'qrcode';
 import { api } from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.js';
+import { useOptionalRestaurant } from '../context/RestaurantContext.js';
 
 interface Table {
   id: string;
@@ -24,8 +27,12 @@ interface LocationInfo {
 }
 
 export default function TableList() {
-  const { locationId } = useParams();
+  const { locationId: paramLocationId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const restaurant = useOptionalRestaurant();
+  const locationId = paramLocationId || restaurant?.locationId;
+  const backPath = restaurant ? `${restaurant.basePath}/restaurant` : `/locations/${locationId}`;
   const [tables, setTables] = useState<Table[]>([]);
   const [screens, setScreens] = useState<Record<string, TableScreen>>({});
   const [location, setLocation] = useState<LocationInfo | null>(null);
@@ -39,6 +46,8 @@ export default function TableList() {
   const [saving, setSaving] = useState(false);
   const [screenBusy, setScreenBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [qrModal, setQrModal] = useState<{ tableName: string; url: string; dataUrl: string } | null>(null);
+  const [qrBusy, setQrBusy] = useState<string | null>(null);
 
   const fetchTables = () => {
     setLoading(true);
@@ -152,6 +161,25 @@ export default function TableList() {
     window.open(screen.url, '_blank', 'noopener,noreferrer');
   };
 
+  const showScreenQr = async (screen: TableScreen) => {
+    if (!screen.url) {
+      alert('Storefront URL is not configured. Set STOREFRONT_URL so customers can scan a full URL.');
+      return;
+    }
+    setQrBusy(screen.table.id);
+    try {
+      const dataUrl = await QRCode.toDataURL(screen.url, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+      });
+      setQrModal({ tableName: screen.table.name, url: screen.url, dataUrl });
+    } catch {
+      alert('Could not generate QR code.');
+    }
+    setQrBusy(null);
+  };
+
   const copyScreenUrl = async (screen: TableScreen) => {
     const value = screen.url || screen.path;
     try {
@@ -164,6 +192,17 @@ export default function TableList() {
       alert('Could not copy the table screen URL.');
     }
   };
+
+  if (
+    user?.role === 'MANAGER' &&
+    user.locationId &&
+    locationId &&
+    locationId !== user.locationId
+  ) {
+    const slug = user.location?.slug || restaurant?.slug;
+    if (slug) return <Navigate to={`/${slug}/manager/tables`} replace />;
+    return <Navigate to="/" replace />;
+  }
 
   if (loading) return <p className="text-gray-500">Loading tables...</p>;
   if (error) return <p className="text-red-600">Error: {error}</p>;
@@ -182,7 +221,7 @@ export default function TableList() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate(`/locations/${locationId}`)}
+            onClick={() => navigate(backPath)}
             className="text-gray-500 hover:text-gray-700 text-sm"
           >
             Back to Location
@@ -358,6 +397,14 @@ export default function TableList() {
                         )}
                         {screen?.isActive && (
                           <>
+                            <button
+                              type="button"
+                              disabled={qrBusy === table.id}
+                              onClick={() => showScreenQr(screen)}
+                              className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+                            >
+                              {qrBusy === table.id ? 'QR…' : 'QR Code'}
+                            </button>
                             <button type="button" onClick={() => openScreen(screen)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-white">
                               Open Screen
                             </button>
@@ -383,6 +430,45 @@ export default function TableList() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {qrModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setQrModal(null)}
+        >
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full max-w-sm bg-white rounded-xl shadow-xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Table QR</p>
+                <h3 className="text-lg font-semibold text-gray-900 mt-1">{qrModal.tableName}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrModal(null)}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex justify-center mb-4">
+              <img
+                src={qrModal.dataUrl}
+                alt={`QR code for ${qrModal.tableName}`}
+                className="w-64 h-64 border border-gray-200 rounded-lg"
+              />
+            </div>
+            <p className="text-xs text-gray-500 break-all text-center mb-4">{qrModal.url}</p>
+            <p className="text-sm text-gray-600 text-center">
+              Customers can scan this QR to open the table screen on their phone and place orders.
+            </p>
+          </div>
         </div>
       )}
     </div>

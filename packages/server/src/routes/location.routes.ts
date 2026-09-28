@@ -20,14 +20,14 @@ import {
   updateTable,
   deleteTable,
 } from '../controllers/table.controller.js';
-import { authenticate, requireStaff, requireRole } from '../middleware/auth.js';
+import { authenticate, requireStaff, requireRole, optionalAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-// Locations - read is open, write requires staff
-router.get('/', listLocations);
-router.get('/:id', getLocation);
-router.post('/', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), createLocation);
+// Locations — list scoped when staff auth present; create is SUPER_ADMIN only
+router.get('/', optionalAuth, listLocations);
+router.get('/:id', optionalAuth, getLocation);
+router.post('/', authenticate, requireStaff, requireRole('SUPER_ADMIN'), createLocation);
 router.patch('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), updateLocation);
 router.delete('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN'), deleteLocation);
 

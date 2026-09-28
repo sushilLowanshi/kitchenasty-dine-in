@@ -24,7 +24,8 @@ test.describe('Storefront Navigation', () => {
   test('footer is visible at bottom of page', async ({ page }) => {
     await page.goto('/');
     const footer = page.locator('footer');
-    await footer.scrollIntoViewIfNeeded();
+    await expect(footer).toBeVisible();
+    await footer.evaluate((el) => el.scrollIntoView({ block: 'end' }));
     await expect(footer).toBeVisible();
     await expect(footer).toContainText(new Date().getFullYear().toString());
   });

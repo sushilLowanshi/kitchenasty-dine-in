@@ -65,25 +65,26 @@ export default function LiveOrderStatusScreen() {
   if (loading) return <LoadingSpinner fullScreen />;
   if (error || !order) return <ErrorView message={error} />;
 
-  const isCancelled = order.status === 'CANCELLED';
+  const currentOrder = order;
+  const isCancelled = currentOrder.status === 'CANCELLED';
   const steps =
-    order.orderType === 'DELIVERY'
+    currentOrder.orderType === 'DELIVERY'
       ? DELIVERY_STEPS
-      : order.orderType === 'PICKUP'
+      : currentOrder.orderType === 'PICKUP'
         ? PICKUP_STEPS
         : DINE_IN_STEPS;
-  const currentStep = steps.indexOf(order.status);
-  // const canPayBill = order.status === 'SERVED' || order.status === 'READY';
+  const currentStep = steps.indexOf(currentOrder.status);
+  // const canPayBill = currentOrder.status === 'SERVED' || currentOrder.status === 'READY';
   // Same as web Checkout: pay anytime after place until completed/cancelled
-  const canPayBill = order.status !== 'COMPLETED' && order.status !== 'CANCELLED';
-  const canCancel = order.status === 'CONFIRMED' || order.status === 'PENDING';
+  const canPayBill = currentOrder.status !== 'COMPLETED' && currentOrder.status !== 'CANCELLED';
+  const canCancel = currentOrder.status === 'CONFIRMED' || currentOrder.status === 'PENDING';
 
   async function handleCancelOrder() {
     if (!canCancel) return;
     setCancelling(true);
     setError('');
     try {
-      await orderApi.cancel(order.id);
+      await orderApi.cancel(currentOrder.id);
       setOrder((prev) => (prev ? { ...prev, status: 'CANCELLED' } : prev));
       await clearActiveOrderId();
       Alert.alert('Order cancelled');
@@ -95,7 +96,7 @@ export default function LiveOrderStatusScreen() {
   }
 
   async function handleBrowseAddItems() {
-    await setActiveOrderId(order.id);
+    await setActiveOrderId(currentOrder.id);
     router.push('/(tabs)/menu');
   }
 

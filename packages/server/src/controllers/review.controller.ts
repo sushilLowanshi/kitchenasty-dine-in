@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/db.js';
+import { assertLocationAccess, getStaffLocationId } from '../lib/locationScope.js';
 
 const createReviewSchema = z.object({
   locationId: z.string().min(1),
@@ -62,7 +63,12 @@ export async function listReviews(req: Request, res: Response): Promise<void> {
   const isApproved = req.query.isApproved as string | undefined;
 
   const where: Record<string, unknown> = {};
-  if (locationId) where.locationId = locationId;
+  const staffLocationId = await getStaffLocationId(req);
+  if (staffLocationId) {
+    where.locationId = staffLocationId;
+  } else if (locationId) {
+    where.locationId = locationId;
+  }
   if (isApproved !== undefined) where.isApproved = isApproved === 'true';
 
   const [reviews, total] = await Promise.all([
@@ -138,6 +144,12 @@ export async function moderateReview(req: Request<{ id: string }>, res: Response
     return;
   }
 
+  const scopeError = await assertLocationAccess(req, existing.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   const review = await prisma.review.update({
     where: { id },
     data: { isApproved },
@@ -154,6 +166,12 @@ export async function deleteReview(req: Request<{ id: string }>, res: Response):
   const existing = await prisma.review.findUnique({ where: { id: req.params.id } });
   if (!existing) {
     res.status(404).json({ success: false, error: 'Review not found' });
+    return;
+  }
+
+  const scopeError = await assertLocationAccess(req, existing.locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
     return;
   }
 

@@ -1,11 +1,13 @@
 import { useEffect, useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { io } from 'socket.io-client';
 import { useCart } from '../context/CartContext.js';
 import { useAuth } from '../context/AuthContext.js';
-import { getActiveOrderId, getActiveOrderIds } from '../lib/activeOrder.js';
-import { apiUrl } from '../lib/apiBase.js';
-import { storePaths } from '../lib/kioskPath.js';
+import { useToast } from '../context/ToastContext.js';
+import { getActiveOrderId, getActiveOrderIds, removeActiveOrderId, setActiveOrderIds } from '../lib/activeOrder.js';
+import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
+import { kioskIdFromPath, storePaths } from '../lib/kioskPath.js';
 import { orderStatusBadgeClass, orderStatusLabel } from './checkout/types.js';
 
 interface ExistingOrderItem {
@@ -15,54 +17,45 @@ interface ExistingOrderItem {
   lineTotal: number;
   optionsLabel: string;
   status: string;
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
 }
 
 export default function CartDrawer() {
   const { t } = useTranslation();
   const { items, isOpen, setIsOpen, updateQuantity, removeItem, clear, subtotal } = useCart();
   const { token } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const paths = storePaths(location.pathname);
+  const kioskId = kioskIdFromPath(location.pathname);
   const activeOrderId = getActiveOrderId();
   const [existingItems, setExistingItems] = useState<ExistingOrderItem[]>([]);
   const [existingSubtotal, setExistingSubtotal] = useState(0);
+  const [selectedItem, setSelectedItem] = useState<ExistingOrderItem | null>(null);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const orderIds = getActiveOrderIds();
-    if (orderIds.length === 0) {
-      setExistingItems([]);
-      setExistingSubtotal(0);
-      return;
-    }
-
-    let cancelled = false;
+  const loadExistingOrders = useCallback(async () => {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    Promise.all(
-      orderIds.map((orderId) =>
-        fetch(apiUrl(`/api/orders/${orderId}`), { headers })
-          .then((res) => res.json())
-          .catch(() => null)
-      )
-    ).then((results) => {
-      if (cancelled) return;
+    const mapOrdersToLines = (orders: Array<Record<string, unknown>>) => {
       const lines: ExistingOrderItem[] = [];
       let subtotalSum = 0;
-      for (const data of results) {
-        if (!data?.success) continue;
-        const order = data.data as Record<string, unknown>;
-        if (['COMPLETED', 'CANCELLED'].includes(order.status as string)) continue;
+      for (const order of orders) {
+        if (['COMPLETED', 'CANCELLED'].includes(String(order.status))) continue;
         const status = (order.status as string) || 'PENDING';
         const orderItems = (order.items as Array<Record<string, unknown>>) || [];
         if (typeof order.subtotal === 'number') subtotalSum += order.subtotal;
+        const orderId = order.id as string;
+        const orderNumber = String(order.orderNumber ?? '');
         orderItems.forEach((item, index) => {
           const quantity = Number(item.quantity) || 0;
           const options = (item.options as Array<{ valueName?: string; value?: string }>) || [];
           lines.push({
-            id: (item.id as string) || `existing-${order.id}-${index}`,
+            id: (item.id as string) || `existing-${orderId}-${index}`,
             name: (item.name as string) || 'Item',
             quantity,
             lineTotal:
@@ -74,17 +67,127 @@ export default function CartDrawer() {
               .filter(Boolean)
               .join(', '),
             status: (item.status as string) || status,
+            orderId,
+            orderNumber,
+            orderStatus: status,
           });
         });
       }
       setExistingItems(lines);
       setExistingSubtotal(subtotalSum);
-    });
+    };
 
+    // Table screen: one shared session has every open ticket + items
+    if (kioskId) {
+      try {
+        const res = await fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`));
+        const data = await res.json();
+        if (data.success) {
+          const orders = ((data.data?.orders as Array<Record<string, unknown>>) || []).filter(
+            (o) => !['COMPLETED', 'CANCELLED'].includes(String(o.status))
+          );
+          setActiveOrderIds(orders.map((o) => o.id as string));
+          mapOrdersToLines(orders);
+          return;
+        }
+      } catch {
+        /* fall back to local ids */
+      }
+    }
+
+    const orderIds = getActiveOrderIds();
+    if (orderIds.length === 0) {
+      setExistingItems([]);
+      setExistingSubtotal(0);
+      return;
+    }
+
+    const results = await Promise.all(
+      orderIds.map((orderId) =>
+        fetch(apiUrl(`/api/orders/${orderId}`), { headers })
+          .then((res) => res.json())
+          .catch(() => null)
+      )
+    );
+
+    mapOrdersToLines(
+      results
+        .filter((data): data is { success: true; data: Record<string, unknown> } => !!data?.success && !!data.data)
+        .map((data) => data.data)
+    );
+  }, [token, kioskId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    loadExistingOrders().finally(() => {
+      if (cancelled) return;
+    });
     return () => {
       cancelled = true;
     };
-  }, [isOpen, token, activeOrderId]);
+  }, [isOpen, loadExistingOrders, activeOrderId]);
+
+  useEffect(() => {
+    if (!kioskId || !isOpen) return;
+    const socket = io(API_ORIGIN || undefined, { path: '/socket.io', transports: ['websocket', 'polling'] });
+    socket.emit('join:kiosk', kioskId);
+    socket.on('kiosk:sessionUpdated', () => {
+      loadExistingOrders();
+    });
+    return () => {
+      socket.emit('leave:kiosk', kioskId);
+      socket.disconnect();
+    };
+  }, [kioskId, isOpen, loadExistingOrders]);
+
+  useEffect(() => {
+    if (!isOpen) setSelectedItem(null);
+  }, [isOpen]);
+
+  const canCancelSelected =
+    !!selectedItem &&
+    (selectedItem.orderStatus === 'CONFIRMED' || selectedItem.orderStatus === 'PENDING');
+  const isCancelling = !!selectedItem && cancellingOrderId === selectedItem.orderId;
+
+  async function handleCancelOrder(orderId: string) {
+    const target = existingItems.find((item) => item.orderId === orderId);
+    if (!target) return;
+    if (target.orderStatus !== 'CONFIRMED' && target.orderStatus !== 'PENDING') return;
+
+    setCancellingOrderId(orderId);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(apiUrl(`/api/orders/${orderId}/cancel`), {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to cancel order');
+
+      removeActiveOrderId(orderId);
+      setExistingItems((prev) => prev.filter((item) => item.orderId !== orderId));
+      setExistingSubtotal((prev) => {
+        const removed = existingItems
+          .filter((item) => item.orderId === orderId)
+          .reduce((sum, item) => sum + item.lineTotal, 0);
+        return Math.max(0, prev - removed);
+      });
+      setSelectedItem(null);
+      showToast({
+        type: 'info',
+        title: target.orderNumber
+          ? `Order #${target.orderNumber} cancelled successfully`
+          : 'Order cancelled successfully',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel order';
+      showToast({ type: 'error', title: 'Could not cancel order', message });
+    } finally {
+      setCancellingOrderId(null);
+    }
+  }
 
   function goBackToOrder() {
     clear();
@@ -166,7 +269,12 @@ export default function CartDrawer() {
                   </p>
                   <div className="space-y-3">
                     {existingItems.map((item) => (
-                      <div key={item.id} className="flex gap-3 pb-3 border-b border-gray-100">
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedItem(item)}
+                        className="w-full flex gap-3 pb-3 border-b border-gray-100 text-left rounded-lg px-1 -mx-1 hover:bg-gray-50 cursor-pointer"
+                      >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-medium text-gray-800 text-base">{item.name}</h3>
@@ -182,7 +290,7 @@ export default function CartDrawer() {
                           <p className="text-xs text-gray-400 mt-1">Qty {item.quantity}</p>
                         </div>
                         <div className="text-sm font-medium text-gray-500">${item.lineTotal.toFixed(2)}</div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -302,6 +410,81 @@ export default function CartDrawer() {
           </div>
         )}
       </div>
+
+      {selectedItem && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          onClick={() => setSelectedItem(null)}
+        >
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full max-w-md bg-white rounded-xl shadow-xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Item details</p>
+                <h3 className="text-lg font-semibold text-gray-900 mt-1">{selectedItem.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-2 text-sm mb-5">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Status</span>
+                <span
+                  className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${orderStatusBadgeClass(selectedItem.status)}`}
+                >
+                  {orderStatusLabel(selectedItem.status)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Quantity</span>
+                <span className="text-gray-900 font-medium">{selectedItem.quantity}</span>
+              </div>
+              {selectedItem.optionsLabel ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Options</span>
+                  <span className="text-gray-900 text-right">{selectedItem.optionsLabel}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500">Price</span>
+                <span className="text-gray-900 font-medium">${selectedItem.lineTotal.toFixed(2)}</span>
+              </div>
+              {selectedItem.orderNumber ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-500">Order</span>
+                  <span className="text-gray-900 font-medium">#{selectedItem.orderNumber}</span>
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              disabled={!canCancelSelected || isCancelling}
+              onClick={() => handleCancelOrder(selectedItem.orderId)}
+              title={
+                canCancelSelected
+                  ? `Cancel order #${selectedItem.orderNumber}`
+                  : 'Cancel is only available while status is New or Confirmed'
+              }
+              className="w-full border-2 border-red-300 text-red-700 py-3 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            >
+              {isCancelling ? 'Cancelling…' : 'Cancel Order'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

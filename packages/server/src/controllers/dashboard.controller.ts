@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../lib/db.js';
+import { getStaffLocationId } from '../lib/locationScope.js';
 
 export async function getDashboardStats(req: Request, res: Response): Promise<void> {
   const now = new Date();
@@ -8,6 +9,9 @@ export async function getDashboardStats(req: Request, res: Response): Promise<vo
   const weekStart = new Date(todayStart);
   weekStart.setDate(weekStart.getDate() - 7);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const staffLocationId = await getStaffLocationId(req);
+  const locFilter = staffLocationId ? { locationId: staffLocationId } : {};
 
   const [
     ordersToday,
@@ -22,48 +26,48 @@ export async function getDashboardStats(req: Request, res: Response): Promise<vo
     totalCustomers,
     pendingReservations,
     pendingReviews,
+    pendingOrders,
     recentOrders,
     topItems,
   ] = await Promise.all([
-    // Orders today
-    prisma.order.count({ where: { createdAt: { gte: todayStart } } }),
-    // Revenue today
+    prisma.order.count({ where: { createdAt: { gte: todayStart }, ...locFilter } }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: todayStart }, status: { not: 'CANCELLED' } },
+      where: { createdAt: { gte: todayStart }, status: { not: 'CANCELLED' }, ...locFilter },
       _sum: { total: true },
     }),
-    // Orders this week
-    prisma.order.count({ where: { createdAt: { gte: weekStart } } }),
-    // Revenue this week
+    prisma.order.count({ where: { createdAt: { gte: weekStart }, ...locFilter } }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: weekStart }, status: { not: 'CANCELLED' } },
+      where: { createdAt: { gte: weekStart }, status: { not: 'CANCELLED' }, ...locFilter },
       _sum: { total: true },
     }),
-    // Orders this month
-    prisma.order.count({ where: { createdAt: { gte: monthStart } } }),
-    // Revenue this month
+    prisma.order.count({ where: { createdAt: { gte: monthStart }, ...locFilter } }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: monthStart }, status: { not: 'CANCELLED' } },
+      where: { createdAt: { gte: monthStart }, status: { not: 'CANCELLED' }, ...locFilter },
       _sum: { total: true },
     }),
-    // Total orders
-    prisma.order.count(),
-    // Total revenue
+    prisma.order.count({ where: locFilter }),
     prisma.order.aggregate({
-      where: { status: { not: 'CANCELLED' } },
+      where: { status: { not: 'CANCELLED' }, ...locFilter },
       _sum: { total: true },
     }),
-    // Active menu items
-    prisma.menuItem.count({ where: { isActive: true } }),
-    // Total customers
+    prisma.menuItem.count({
+      where: { isActive: true, ...(staffLocationId ? { locationId: staffLocationId } : {}) },
+    }),
+    // Customers are global; location staff still see platform count for now
     prisma.customer.count(),
-    // Pending reservations
-    prisma.reservation.count({ where: { status: 'PENDING' } }),
-    // Pending reviews
-    prisma.review.count({ where: { isApproved: false } }),
-    // Recent orders (last 5)
+    prisma.reservation.count({ where: { status: 'PENDING', ...locFilter } }),
+    prisma.review.count({
+      where: {
+        isApproved: false,
+        ...(staffLocationId ? { locationId: staffLocationId } : {}),
+      },
+    }),
+    prisma.order.count({
+      where: { status: { in: ['PENDING', 'CONFIRMED'] }, ...locFilter },
+    }),
     prisma.order.findMany({
       take: 5,
+      where: locFilter,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -75,18 +79,26 @@ export async function getDashboardStats(req: Request, res: Response): Promise<vo
         customer: { select: { name: true } },
       },
     }),
-    // Top selling items (by order item count)
-    prisma.orderItem.groupBy({
-      by: ['menuItemId', 'name'],
-      _sum: { quantity: true },
-      orderBy: { _sum: { quantity: 'desc' } },
-      take: 5,
-    }),
+    staffLocationId
+      ? prisma.orderItem.groupBy({
+          by: ['menuItemId', 'name'],
+          where: { order: { locationId: staffLocationId } },
+          _sum: { quantity: true },
+          orderBy: { _sum: { quantity: 'desc' } },
+          take: 5,
+        })
+      : prisma.orderItem.groupBy({
+          by: ['menuItemId', 'name'],
+          _sum: { quantity: true },
+          orderBy: { _sum: { quantity: 'desc' } },
+          take: 5,
+        }),
   ]);
 
   res.json({
     success: true,
     data: {
+      pendingOrders,
       metrics: {
         ordersToday,
         revenueToday: revenueToday._sum.total || 0,
@@ -117,7 +129,15 @@ export async function getAnalytics(req: Request, res: Response): Promise<void> {
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
-  // Daily revenue and order counts
+  const staffLocationId = await getStaffLocationId(req);
+  const locationSql = staffLocationId
+    ? Prisma.sql`AND "locationId" = ${staffLocationId}`
+    : Prisma.empty;
+  const orderWhere: Prisma.OrderWhereInput = {
+    createdAt: { gte: startDate },
+    ...(staffLocationId ? { locationId: staffLocationId } : {}),
+  };
+
   const dailyStats = await prisma.$queryRaw<{ date: string; orders: bigint; revenue: number }[]>(
     Prisma.sql`
       SELECT
@@ -125,55 +145,68 @@ export async function getAnalytics(req: Request, res: Response): Promise<void> {
         COUNT(*)::bigint AS orders,
         COALESCE(SUM(CASE WHEN status != 'CANCELLED' THEN total ELSE 0 END), 0) AS revenue
       FROM "orders"
-      WHERE "createdAt" >= ${startDate}
+      WHERE "createdAt" >= ${startDate} ${locationSql}
       GROUP BY "createdAt"::date
       ORDER BY "createdAt"::date
     `
   );
 
-  // Order type distribution
   const orderTypeDistribution = await prisma.order.groupBy({
     by: ['orderType'],
-    where: { createdAt: { gte: startDate } },
+    where: orderWhere,
     _count: true,
   });
 
-  // Order status distribution
   const orderStatusDistribution = await prisma.order.groupBy({
     by: ['status'],
-    where: { createdAt: { gte: startDate } },
+    where: orderWhere,
     _count: true,
   });
 
-  // Hourly order distribution (for pattern analysis)
   const hourlyDistribution = await prisma.$queryRaw<{ hour: number; orders: bigint }[]>(
     Prisma.sql`
       SELECT
         EXTRACT(HOUR FROM "createdAt")::int AS hour,
         COUNT(*)::bigint AS orders
       FROM "orders"
-      WHERE "createdAt" >= ${startDate}
+      WHERE "createdAt" >= ${startDate} ${locationSql}
       GROUP BY EXTRACT(HOUR FROM "createdAt")
       ORDER BY hour
     `
   );
 
-  // Top categories by revenue
   const categoryRevenue = await prisma.$queryRaw<{ name: string; revenue: number; orders: bigint }[]>(
-    Prisma.sql`
-      SELECT
-        c.name,
-        COALESCE(SUM(oi.subtotal), 0) AS revenue,
-        COUNT(DISTINCT o.id)::bigint AS orders
-      FROM "order_items" oi
-      JOIN "menu_items" mi ON oi."menuItemId" = mi.id
-      JOIN "categories" c ON mi."categoryId" = c.id
-      JOIN "orders" o ON oi."orderId" = o.id
-      WHERE o."createdAt" >= ${startDate} AND o.status != 'CANCELLED'
-      GROUP BY c.id, c.name
-      ORDER BY revenue DESC
-      LIMIT 10
-    `
+    staffLocationId
+      ? Prisma.sql`
+          SELECT
+            c.name,
+            COALESCE(SUM(oi.subtotal), 0) AS revenue,
+            COUNT(DISTINCT o.id)::bigint AS orders
+          FROM "order_items" oi
+          JOIN "menu_items" mi ON oi."menuItemId" = mi.id
+          JOIN "categories" c ON mi."categoryId" = c.id
+          JOIN "orders" o ON oi."orderId" = o.id
+          WHERE o."createdAt" >= ${startDate}
+            AND o.status != 'CANCELLED'
+            AND o."locationId" = ${staffLocationId}
+          GROUP BY c.id, c.name
+          ORDER BY revenue DESC
+          LIMIT 10
+        `
+      : Prisma.sql`
+          SELECT
+            c.name,
+            COALESCE(SUM(oi.subtotal), 0) AS revenue,
+            COUNT(DISTINCT o.id)::bigint AS orders
+          FROM "order_items" oi
+          JOIN "menu_items" mi ON oi."menuItemId" = mi.id
+          JOIN "categories" c ON mi."categoryId" = c.id
+          JOIN "orders" o ON oi."orderId" = o.id
+          WHERE o."createdAt" >= ${startDate} AND o.status != 'CANCELLED'
+          GROUP BY c.id, c.name
+          ORDER BY revenue DESC
+          LIMIT 10
+        `
   );
 
   res.json({

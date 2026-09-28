@@ -1,6 +1,8 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface Staff {
   id: string;
@@ -21,6 +23,8 @@ interface Location {
 export default function StaffEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [staff, setStaff] = useState<Staff | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -33,27 +37,37 @@ export default function StaffEdit() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
-    Promise.all([
-      fetch(apiUrl(`/api/staff/${id}`), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json()),
-      fetch(apiUrl('/api/locations?limit=100'), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json()),
-    ])
-      .then(([staffData, locData]) => {
-        if (!staffData.success) throw new Error(staffData.error || 'Failed to load staff');
-        const s = staffData.data;
+    const load = async () => {
+      try {
+        const staffRes = await fetch(apiUrl(`/api/staff/${id}`), {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then((r) => r.json());
+        if (!staffRes.success) throw new Error(staffRes.error || 'Failed to load staff');
+        const s = staffRes.data;
         setStaff(s);
         setName(s.name);
         setRole(s.role);
         setPhone(s.phone || '');
         setLocationId(s.locationId || '');
         setIsActive(s.isActive);
-        if (locData.success) setLocations(locData.data || []);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [id, token]);
+
+        if (isSuperAdmin) {
+          const locRes = await fetch(apiUrl('/api/locations?limit=100'), {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then((r) => r.json());
+          if (locRes.success) setLocations(locRes.data || []);
+        }
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [id, token, isSuperAdmin]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -61,16 +75,20 @@ export default function StaffEdit() {
     setSaving(true);
 
     try {
+      const body: Record<string, unknown> = {
+        name,
+        phone: phone || null,
+        isActive,
+      };
+      if (isSuperAdmin) {
+        body.role = role;
+        body.locationId = locationId || null;
+      }
+
       const res = await fetch(apiUrl(`/api/staff/${id}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          name,
-          role,
-          phone: phone || null,
-          locationId: locationId || null,
-          isActive,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update');
@@ -129,18 +147,30 @@ export default function StaffEdit() {
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          >
-            <option value="STAFF">Staff</option>
-            <option value="MANAGER">Manager</option>
-            <option value="SUPER_ADMIN">Super Admin</option>
-          </select>
-        </div>
+        {isSuperAdmin ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            >
+              <option value="STAFF">Staff</option>
+              <option value="MANAGER">Manager</option>
+              <option value="SUPER_ADMIN">Super Admin</option>
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <input
+              type="text"
+              value="Staff"
+              disabled
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500"
+            />
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -152,19 +182,31 @@ export default function StaffEdit() {
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-          <select
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          >
-            <option value="">None</option>
-            {locations.map((loc) => (
-              <option key={loc.id} value={loc.id}>{loc.name}</option>
-            ))}
-          </select>
-        </div>
+        {isSuperAdmin ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+            <select
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+            >
+              <option value="">None</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : staff.location ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+            <input
+              type="text"
+              value={staff.location.name}
+              disabled
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500"
+            />
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <input

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import nodemailer from 'nodemailer';
 import prisma from '../lib/db.js';
 import { auditLog } from '../lib/audit.js';
+import { invalidateMailCache, sendEmail } from '../lib/email.js';
 
 const updateSettingsSchema = z.object({
   siteName: z.string().min(1).optional(),
@@ -321,6 +321,7 @@ export async function updateMailSettings(req: Request, res: Response): Promise<v
   };
 
   const data = await updateSettingsGroup('mailSettings', mergedData);
+  invalidateMailCache();
   res.json({
     success: true,
     data: { ...data, smtpPass: maskSecret(data.smtpPass) },
@@ -334,35 +335,18 @@ export async function sendTestEmail(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const mail = await getSettingsGroup('mailSettings');
-  const host = mail.smtpHost || process.env.SMTP_HOST || 'localhost';
-  const port = mail.smtpPort || parseInt(process.env.SMTP_PORT || '1025');
-  const user = mail.smtpUser || process.env.SMTP_USER;
-  const pass = mail.smtpPass || process.env.SMTP_PASS;
-  const senderName = mail.senderName || 'KitchenAsty';
-  const senderEmail = mail.senderEmail || 'noreply@kitchenasty.com';
-  const encryption = mail.encryption || 'none';
+  invalidateMailCache();
+  const result = await sendEmail({
+    to,
+    subject: 'KitchenAsty — Test Email',
+    html: '<div style="font-family:sans-serif;padding:20px"><h2>Test Email</h2><p>If you received this, your mail settings are configured correctly.</p></div>',
+  });
 
-  try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: encryption === 'ssl',
-      auth: user ? { user, pass } : undefined,
-      ...(encryption === 'tls' ? { requireTLS: true } : {}),
-    });
-
-    await transporter.sendMail({
-      from: `${senderName} <${senderEmail}>`,
-      to,
-      subject: 'KitchenAsty — Test Email',
-      html: '<div style="font-family:sans-serif;padding:20px"><h2>Test Email</h2><p>If you received this, your mail settings are configured correctly.</p></div>',
-    });
-
+  if (result.sent) {
     res.json({ success: true, message: 'Test email sent successfully' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Failed to send test email' });
+    return;
   }
+  res.status(500).json({ success: false, error: result.error || 'Failed to send test email' });
 }
 
 // ============================================================

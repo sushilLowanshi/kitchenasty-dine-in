@@ -1,6 +1,8 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Navigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.js';
+import { useOptionalRestaurant } from '../context/RestaurantContext.js';
 
 interface DeliveryZone {
   id: string;
@@ -12,7 +14,10 @@ interface DeliveryZone {
 }
 
 export default function DeliveryZoneList() {
-  const { locationId } = useParams<{ locationId: string }>();
+  const { locationId: paramLocationId } = useParams<{ locationId: string }>();
+  const { user } = useAuth();
+  const restaurant = useOptionalRestaurant();
+  const locationId = paramLocationId || restaurant?.locationId;
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,6 +37,17 @@ export default function DeliveryZoneList() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [locationId]);
+
+  if (
+    user?.role === 'MANAGER' &&
+    user.locationId &&
+    locationId &&
+    locationId !== user.locationId
+  ) {
+    const slug = user.location?.slug || restaurant?.slug;
+    if (slug) return <Navigate to={`/${slug}/manager/delivery-zones`} replace />;
+    return <Navigate to="/" replace />;
+  }
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();

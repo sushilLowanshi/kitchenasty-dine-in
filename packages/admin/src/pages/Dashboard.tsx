@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface DashboardData {
   metrics: {
@@ -67,7 +68,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState<'overview' | 'analytics'>('overview');
   const [analyticsDays, setAnalyticsDays] = useState(30);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     fetch(apiUrl(`/api/dashboard/stats`), {

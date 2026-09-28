@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.js';
 
 interface Location {
   id: string;
@@ -15,6 +16,7 @@ interface Location {
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
   _count: { deliveryZones: number; tables: number; orders: number };
+  staff?: { id: string; email: string; name: string }[];
 }
 
 interface LocationResponse {
@@ -24,6 +26,8 @@ interface LocationResponse {
 }
 
 export default function LocationList() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +44,18 @@ export default function LocationList() {
         setLoading(false);
       });
   }, []);
+
+  // Manager: open only their restaurant (no multi-location list)
+  if (!loading && !isSuperAdmin) {
+    const slug = user?.location?.slug;
+    if (slug) {
+      return <Navigate to={`/${slug}/manager/`} replace />;
+    }
+    const ownId = user?.locationId || locations[0]?.id;
+    if (ownId) {
+      return <Navigate to={`/locations/${ownId}`} replace />;
+    }
+  }
 
   const toggleBusy = async (loc: Location) => {
     setTogglingBusy(loc.id);
@@ -59,12 +75,14 @@ export default function LocationList() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-semibold text-gray-800">Locations</h2>
-        <Link
-          to="/locations/new"
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-        >
-          Add Location
-        </Link>
+        {isSuperAdmin && (
+          <Link
+            to="/locations/new"
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+          >
+            Add Location
+          </Link>
+        )}
       </div>
 
       {loading && <p className="text-gray-500">Loading locations...</p>}
@@ -72,13 +90,17 @@ export default function LocationList() {
 
       {!loading && !error && locations.length === 0 && (
         <div className="bg-white rounded-lg shadow p-8 text-center">
-          <p className="text-gray-500 mb-4">No locations yet.</p>
-          <Link
-            to="/locations/new"
-            className="text-primary-600 hover:text-primary-700 font-medium"
-          >
-            Create your first location
-          </Link>
+          <p className="text-gray-500 mb-4">
+            {isSuperAdmin ? 'No locations yet.' : 'No restaurant assigned to your account.'}
+          </p>
+          {isSuperAdmin && (
+            <Link
+              to="/locations/new"
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Create your first location
+            </Link>
+          )}
         </div>
       )}
 

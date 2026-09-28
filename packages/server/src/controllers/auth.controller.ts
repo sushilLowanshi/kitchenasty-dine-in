@@ -22,7 +22,12 @@ export async function staffLogin(req: Request, res: Response): Promise<void> {
 
   const { email, password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: {
+      location: { select: { id: true, slug: true, name: true } },
+    },
+  });
   if (!user || !user.isActive) {
     res.status(401).json({ success: false, error: 'Invalid credentials' });
     return;
@@ -50,6 +55,8 @@ export async function staffLogin(req: Request, res: Response): Promise<void> {
         email: user.email,
         name: user.name,
         role: user.role,
+        locationId: user.locationId,
+        location: user.location,
       },
     },
   });
@@ -195,7 +202,16 @@ export async function getMe(req: Request, res: Response): Promise<void> {
   if (req.user.type === 'staff') {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, role: true, phone: true, avatar: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        phone: true,
+        avatar: true,
+        locationId: true,
+        location: { select: { id: true, slug: true, name: true } },
+      },
     });
     res.json({ success: true, data: { type: 'staff', user } });
   } else {

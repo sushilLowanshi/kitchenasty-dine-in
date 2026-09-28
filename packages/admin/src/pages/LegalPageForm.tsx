@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 export default function LegalPageForm() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
