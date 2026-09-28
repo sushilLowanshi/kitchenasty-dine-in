@@ -283,6 +283,7 @@ describe('Order API - Integration Tests', () => {
     });
 
     it('updates order status', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.order.findUnique.mockResolvedValue({ ...sampleOrder, customer: null } as any);
       mockedPrisma.order.update.mockResolvedValue({ ...sampleOrder, status: 'CONFIRMED' } as any);
       mockedPrisma.automationRule.findMany.mockResolvedValue([]);

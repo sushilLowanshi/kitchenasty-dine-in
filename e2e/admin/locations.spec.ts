@@ -23,12 +23,11 @@ test.describe('Admin Locations Page', () => {
   test('new location form has all sections', async ({ page }) => {
     await page.goto('/locations/new');
 
-    // Sections (using heading level 3)
+    // Dine-in form: Service Settings & Delivery Zones are hidden
     await expect(page.getByText('Basic Information')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Restaurant Manager' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Address' })).toBeVisible();
-    await expect(page.getByText('Service Settings')).toBeVisible();
     await expect(page.getByText('Operating Hours')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Delivery Zones' })).toBeVisible();
   });
 
   test('new location form has required fields', async ({ page }) => {
@@ -62,25 +61,23 @@ test.describe('Admin Locations Page', () => {
     }
   });
 
-  test('can add delivery zones', async ({ page }) => {
+  test('new location form has manager invite fields', async ({ page }) => {
     await page.goto('/locations/new');
 
-    await page.getByText('+ Add Zone').click();
-    await expect(page.getByPlaceholder('Zone name')).toBeVisible();
-
-    await page.getByText('+ Add Zone').click();
-    const zoneInputs = page.getByPlaceholder('Zone name');
-    expect(await zoneInputs.count()).toBe(2);
+    await expect(page.getByText('Manager Email *')).toBeVisible();
+    await expect(page.getByPlaceholder('owner@restaurant.com')).toBeVisible();
+    await expect(page.getByText('Initial Staff (optional)')).toBeVisible();
+    await expect(page.getByPlaceholder('staff@restaurant.com')).toBeVisible();
   });
 
-  test('can remove delivery zones', async ({ page }) => {
+  test('manager and staff invite emails accept input', async ({ page }) => {
     await page.goto('/locations/new');
 
-    await page.getByText('+ Add Zone').click();
-    await expect(page.getByPlaceholder('Zone name')).toBeVisible();
+    await page.getByPlaceholder('owner@restaurant.com').fill('owner@example.com');
+    await page.getByPlaceholder('staff@restaurant.com').fill('staff@example.com');
 
-    await page.getByText('Remove').click();
-    await expect(page.getByPlaceholder('Zone name')).not.toBeVisible();
+    await expect(page.getByPlaceholder('owner@restaurant.com')).toHaveValue('owner@example.com');
+    await expect(page.getByPlaceholder('staff@restaurant.com')).toHaveValue('staff@example.com');
   });
 
   test('back button navigates to location list', async ({ page }) => {
