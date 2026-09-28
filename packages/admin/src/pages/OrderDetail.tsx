@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface OrderItem {
   id: string;
@@ -57,7 +58,7 @@ export default function OrderDetailPage() {
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState(false);
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     fetch(apiUrl(`/api/orders/${id}`), {

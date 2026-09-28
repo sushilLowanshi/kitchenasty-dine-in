@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 export default function SettingsMail() {
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -103,6 +104,22 @@ export default function SettingsMail() {
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4 mb-6">
         <h2 className="text-lg font-semibold text-gray-900">SMTP Configuration</h2>
+        <p className="text-sm text-gray-500">
+          Save Gmail here to send invites to real inboxes (this overrides Mailhog in{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">.env</code>).
+          Host <code className="text-xs bg-gray-100 px-1 rounded">smtp.gmail.com</code>,
+          Port <code className="text-xs bg-gray-100 px-1 rounded">587</code>, Encryption <strong>TLS</strong>,
+          User = your Gmail, Password ={' '}
+          <a
+            href="https://myaccount.google.com/apppasswords"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary-600 underline"
+          >
+            Google App Password
+          </a>
+          . After Save, use Send Test below — then invite staff again.
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

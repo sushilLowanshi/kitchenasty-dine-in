@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import { api } from '../lib/api.js';
 
 interface Category {

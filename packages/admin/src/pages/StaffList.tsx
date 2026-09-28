@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface Staff {
   id: string;
@@ -41,7 +42,7 @@ export default function StaffList() {
   const [roleFilter, setRoleFilter] = useState('');
   const [search, setSearch] = useState('');
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     setLoading(true);

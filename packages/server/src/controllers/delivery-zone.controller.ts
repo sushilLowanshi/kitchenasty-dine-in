@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/db.js';
 import { isPointInPolygon } from '../lib/geo.js';
+import { assertLocationAccess } from '../lib/locationScope.js';
 
 const createZoneSchema = z.object({
   name: z.string().min(1),
@@ -15,6 +16,14 @@ const updateZoneSchema = createZoneSchema.partial();
 
 export async function listDeliveryZones(req: Request<{ locationId: string }>, res: Response): Promise<void> {
   const { locationId } = req.params;
+
+  if (req.user?.type === 'staff') {
+    const scopeError = await assertLocationAccess(req, locationId);
+    if (scopeError) {
+      res.status(403).json({ success: false, error: scopeError });
+      return;
+    }
+  }
 
   const location = await prisma.location.findUnique({ where: { id: locationId } });
   if (!location) {
@@ -35,6 +44,12 @@ export async function createDeliveryZone(req: Request<{ locationId: string }>, r
   const parsed = createZoneSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ success: false, error: parsed.error.errors });
+    return;
+  }
+
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
     return;
   }
 
@@ -59,6 +74,12 @@ export async function updateDeliveryZone(req: Request<{ locationId: string; zone
     return;
   }
 
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
+
   const zone = await prisma.deliveryZone.findFirst({
     where: { id: zoneId, locationId },
   });
@@ -77,6 +98,12 @@ export async function updateDeliveryZone(req: Request<{ locationId: string; zone
 
 export async function deleteDeliveryZone(req: Request<{ locationId: string; zoneId: string }>, res: Response): Promise<void> {
   const { locationId, zoneId } = req.params;
+
+  const scopeError = await assertLocationAccess(req, locationId);
+  if (scopeError) {
+    res.status(403).json({ success: false, error: scopeError });
+    return;
+  }
 
   const zone = await prisma.deliveryZone.findFirst({
     where: { id: zoneId, locationId },

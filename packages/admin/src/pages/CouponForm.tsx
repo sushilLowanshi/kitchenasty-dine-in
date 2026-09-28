@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 export default function CouponForm() {
   const { id } = useParams();
@@ -21,7 +22,7 @@ export default function CouponForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   useEffect(() => {
     if (!id) return;

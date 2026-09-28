@@ -29,7 +29,10 @@ const navItems: NavItem[] = [
   },
   { path: '/reviews', label: 'Reviews', icon: '\u2B50', roles: ['SUPER_ADMIN', 'MANAGER', 'STAFF'] },
   { path: '/kitchen', label: 'Kitchen', icon: '\uD83C\uDF73', roles: ['SUPER_ADMIN', 'MANAGER', 'STAFF'] },
-  { path: '/locations', label: 'Locations', icon: '\u25CE', roles: ['SUPER_ADMIN', 'MANAGER'] },
+  { path: '/locations', label: 'Locations', icon: '\u25CE', roles: ['SUPER_ADMIN'] },
+  { path: '/restaurant', label: 'My Restaurant', icon: '\u25CE', roles: ['MANAGER'] },
+  { path: '/tables', label: 'Tables', icon: '\u25A1', roles: ['MANAGER'] },
+  { path: '/delivery-zones', label: 'Delivery Zones', icon: '\u25CE', roles: ['MANAGER'] },
   {
     path: '/menu',
     label: 'Menu',
@@ -79,7 +82,7 @@ const navItems: NavItem[] = [
       { path: '/developer/audit-log', label: 'Audit Log' },
     ],
   },
-  { path: '/staff', label: 'Staff', icon: '\uD83D\uDC65', roles: ['SUPER_ADMIN'] },
+  { path: '/staff', label: 'Staff', icon: '\uD83D\uDC65', roles: ['SUPER_ADMIN', 'MANAGER'] },
 ];
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -96,7 +99,18 @@ const ROLE_LABELS: Record<Role, string> = {
 
 const recentStaffCancelToasts = new Set<string>();
 
-export default function AdminLayout({ children, onLogout }: { children: React.ReactNode; onLogout?: () => void }) {
+export default function AdminLayout({
+  children,
+  onLogout,
+  basePath = '',
+  restaurantName,
+}: {
+  children: React.ReactNode;
+  onLogout?: () => void;
+  /** Empty for Super Admin; `/{slug}/manager` or `/{slug}/staff` for portals */
+  basePath?: string;
+  restaurantName?: string;
+}) {
   const location = useLocation();
   const { user, token } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
@@ -105,9 +119,34 @@ export default function AdminLayout({ children, onLogout }: { children: React.Re
   const dropdownRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const href = (path: string) => {
+    if (!basePath) return path;
+    if (path === '/') return `${basePath}/`;
+    return `${basePath}${path}`;
+  };
+
   const filteredNav = user
-    ? navItems.filter((item) => item.roles.includes(user.role))
+    ? navItems
+        .filter((item) => item.roles.includes(user.role))
+        .map((item) => {
+          if (item.label === 'My Restaurant') {
+            return { ...item, path: href('/restaurant') };
+          }
+          return {
+            ...item,
+            path: href(item.path),
+            children: item.children?.map((c) => ({ ...c, path: href(c.path) })),
+          };
+        })
     : [];
+
+  const homePath = basePath ? `${basePath}/` : '/';
+  const isNavActive = (itemPath: string) => {
+    if (itemPath === homePath || itemPath === basePath || itemPath === '/') {
+      return location.pathname === '/' || location.pathname === basePath || location.pathname === `${basePath}/`;
+    }
+    return location.pathname.startsWith(itemPath);
+  };
 
   // Poll pending order count
   useEffect(() => {
@@ -115,7 +154,7 @@ export default function AdminLayout({ children, onLogout }: { children: React.Re
 
     async function fetchPending() {
       try {
-        const res = await fetch(apiUrl('/api/dashboard'), {
+        const res = await fetch(apiUrl('/api/dashboard/stats'), {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -211,16 +250,15 @@ export default function AdminLayout({ children, onLogout }: { children: React.Re
       <aside className="w-64 bg-gray-900 text-white flex flex-col" role="navigation" aria-label="Main navigation">
         <div className="px-6 py-4 border-b border-gray-700">
           <h1 className="text-xl font-bold text-primary-400">KitchenAsty</h1>
-          <p className="text-xs text-gray-400 mt-1">Admin Panel</p>
+          <p className="text-xs text-gray-400 mt-1 truncate">
+            {restaurantName ? restaurantName : 'Admin Panel'}
+          </p>
         </div>
         <nav className="flex-1 py-4">
           {filteredNav.map((item) => {
-            const isActive =
-              item.path === '/'
-                ? location.pathname === '/'
-                : location.pathname.startsWith(item.path);
+            const isActive = isNavActive(item.path);
             return (
-              <div key={item.path}>
+              <div key={`${item.label}-${item.path}`}>
                 <Link
                   to={item.children ? item.children[0].path : item.path}
                   className={`flex items-center px-6 py-3 text-sm transition-colors ${isActive

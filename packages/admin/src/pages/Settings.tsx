@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { AppLink as Link } from '../components/AppLink.js';
 import { useAuth } from '../context/AuthContext.js';
 
 interface SettingsCard {

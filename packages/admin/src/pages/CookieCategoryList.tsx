@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../lib/apiBase.js';
+import { getStoredToken } from '../lib/authStorage.js';
 
 interface CookieCategory {
   id: string;
@@ -20,7 +21,7 @@ export default function CookieCategoryList() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
-  const token = localStorage.getItem('token') || '';
+  const token = getStoredToken();
 
   function loadCategories() {
     fetch(apiUrl('/api/legal/cookie-categories'), {

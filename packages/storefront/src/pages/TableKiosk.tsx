@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useParams } from 'react-router-dom';
 import { apiUrl } from '../lib/apiBase.js';
-import { useCart } from '../context/CartContext.js';
 import { useKiosk } from '../context/KioskContext.js';
 
 interface PublicKiosk {
@@ -20,14 +19,10 @@ type ScreenState =
 
 export default function TableKiosk() {
   const { kioskId } = useParams();
-  const { clear } = useCart();
   const { setTableName } = useKiosk();
   const [screen, setScreen] = useState<ScreenState>({ status: 'loading' });
 
-  useEffect(() => {
-    clear();
-  }, [kioskId, clear]);
-
+  // Do NOT clear shared cart on mount — other devices share the same server cart.
   useEffect(() => {
     if (!kioskId) {
       setScreen({ status: 'invalid' });
