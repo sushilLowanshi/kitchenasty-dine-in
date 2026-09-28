@@ -331,6 +331,7 @@ describe('Location API - Integration Tests', () => {
 
   describe('POST /api/locations/:locationId/delivery-zones', () => {
     it('creates a delivery zone', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.location.findUnique.mockResolvedValue(sampleLocation as any);
       mockedPrisma.deliveryZone.create.mockResolvedValue({
         id: 'z2',

@@ -109,6 +109,7 @@ describe('Table API - Integration Tests', () => {
     });
 
     it('creates a table', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.location.findUnique.mockResolvedValue(sampleLocation as any);
       mockedPrisma.table.findFirst.mockResolvedValue(null);
       mockedPrisma.table.create.mockResolvedValue({ id: 'tbl-2', locationId: 'loc-1', ...newTable, isActive: true } as any);
@@ -160,6 +161,7 @@ describe('Table API - Integration Tests', () => {
   // ============================================================
   describe('PATCH /api/locations/:locationId/tables/:tableId', () => {
     it('updates table capacity', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.table.findFirst.mockResolvedValue(sampleTable as any);
       mockedPrisma.table.update.mockResolvedValue({ ...sampleTable, capacity: 8 } as any);
 

@@ -365,10 +365,10 @@ describe('Menu API - Integration Tests', () => {
   });
 
   describe('DELETE /api/menu/items/:id', () => {
-    it('requires SUPER_ADMIN role', async () => {
+    it('rejects STAFF role', async () => {
       const res = await request(app)
         .delete('/api/menu/items/item-1')
-        .set('Authorization', `Bearer ${managerToken}`);
+        .set('Authorization', `Bearer ${staffToken}`);
 
       expect(res.status).toBe(403);
     });
