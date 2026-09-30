@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, FlatList, Image, TextInput, RefreshC
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useDebounce } from '@/hooks/useDebounce';
-import { menuApi } from '@/api/endpoints';
+import { menuApi, locationApi } from '@/api/endpoints';
 import type { Category, MenuItem } from '@/api/types';
 import { formatCurrency } from '@/lib/formatters';
 import { API_BASE_URL } from '@/lib/constants';
@@ -23,6 +23,7 @@ export default function MenuScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasActiveOrder, setHasActiveOrder] = useState(false);
+  const [locationId, setLocationId] = useState<string | null>(null);
   const cartCount = useCartStore((s) => s.itemCount());
   const clearCart = useCartStore((s) => s.clear);
 
@@ -32,16 +33,33 @@ export default function MenuScreen() {
     }, []),
   );
 
-  const loadCategories = useCallback(async () => {
-    try {
-      const res = await menuApi.getCategories();
-      setCategories((res.data || []).filter((c: Category) => c.isActive && !c.parentId));
-    } catch {}
+  useEffect(() => {
+    locationApi
+      .getAll()
+      .then((res) => {
+        const list = (res.data || []).filter((l: { isActive?: boolean }) => l.isActive !== false);
+        if (list[0]?.id) setLocationId(list[0].id);
+      })
+      .catch(() => {});
   }, []);
 
+  const loadCategories = useCallback(async () => {
+    if (!locationId) return;
+    try {
+      const res = await menuApi.getCategories(locationId);
+      setCategories((res.data || []).filter((c: Category) => c.isActive && !c.parentId));
+    } catch {}
+  }, [locationId]);
+
   const loadItems = useCallback(async () => {
+    if (!locationId) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const res = await menuApi.getItems({
+        locationId,
         categoryId: selectedCategory || undefined,
         search: debouncedSearch || undefined,
         limit: 50,
@@ -50,7 +68,7 @@ export default function MenuScreen() {
     } catch {}
     setLoading(false);
     setRefreshing(false);
-  }, [selectedCategory, debouncedSearch]);
+  }, [locationId, selectedCategory, debouncedSearch]);
 
   useEffect(() => {
     loadCategories();

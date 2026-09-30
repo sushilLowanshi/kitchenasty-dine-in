@@ -6,6 +6,7 @@ import { apiUrl } from '../lib/apiBase.js';
 import { getActiveOrderId } from '../lib/activeOrder.js';
 import { storePaths } from '../lib/kioskPath.js';
 import { useCart } from '../context/CartContext.js';
+import { useKiosk } from '../context/KioskContext.js';
 import MenuItemModal from '../components/MenuItemModal.js';
 
 interface Category {
@@ -42,6 +43,7 @@ export default function Menu() {
   const location = useLocation();
   const paths = storePaths(location.pathname);
   const { clear } = useCart();
+  const { locationId: kioskLocationId } = useKiosk();
   const activeOrderId = getActiveOrderId();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
@@ -52,11 +54,39 @@ export default function Menu() {
   const [page, setPage] = useState(1);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [mobileCategoriesOpen, setMobileCategoriesOpen] = useState(false);
+  const [fallbackLocationId, setFallbackLocationId] = useState<string | null>(null);
 
-  const { data: categories, isLoading: categoriesLoading } = useApi<Category[]>('/api/menu/categories');
+  // Prefer table-kiosk restaurant; else ?locationId=; else first active location (public menu).
+  const queryLocationId = searchParams.get('locationId');
+  const menuLocationId = kioskLocationId || queryLocationId || fallbackLocationId;
+
+  useEffect(() => {
+    if (kioskLocationId || queryLocationId) return;
+    let cancelled = false;
+    fetch(apiUrl('/api/locations'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled || !json?.data?.length) return;
+        const active = (json.data as { id: string; isActive?: boolean }[]).filter(
+          (l) => l.isActive !== false
+        );
+        if (active[0]?.id) setFallbackLocationId(active[0].id);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [kioskLocationId, queryLocationId]);
+
+  const categoriesUrl = menuLocationId
+    ? `/api/menu/categories?locationId=${encodeURIComponent(menuLocationId)}`
+    : null;
+  const { data: categories, isLoading: categoriesLoading } = useApi<Category[]>(categoriesUrl);
 
   // Build items URL with filters
-  const itemsUrl = buildItemsUrl(selectedCategory, debouncedSearch, page);
+  const itemsUrl = menuLocationId
+    ? buildItemsUrl(selectedCategory, debouncedSearch, page, menuLocationId)
+    : null;
   const [items, setItems] = useState<MenuItem[]>([]);
   const [pagination, setPagination] = useState<MenuResponse['pagination'] | null>(null);
   const [itemsLoading, setItemsLoading] = useState(true);
@@ -71,8 +101,15 @@ export default function Menu() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch items
+  // Fetch items (scoped to this restaurant / location)
   useEffect(() => {
+    if (!itemsUrl) {
+      setItems([]);
+      setPagination(null);
+      setItemsLoading(!menuLocationId);
+      setItemsError(null);
+      return;
+    }
     setItemsLoading(true);
     setItemsError(null);
     fetch(apiUrl(itemsUrl))
@@ -86,16 +123,17 @@ export default function Menu() {
       })
       .catch((err) => setItemsError(err.message))
       .finally(() => setItemsLoading(false));
-  }, [itemsUrl]);
+  }, [itemsUrl, menuLocationId]);
 
-  // Sync URL params
+  // Sync URL params (preserve locationId for public multi-restaurant links)
   useEffect(() => {
     const params: Record<string, string> = {};
     if (selectedCategory) params.category = selectedCategory;
     if (debouncedSearch) params.search = debouncedSearch;
     if (page > 1) params.page = String(page);
+    if (queryLocationId) params.locationId = queryLocationId;
     setSearchParams(params, { replace: true });
-  }, [selectedCategory, debouncedSearch, page, setSearchParams]);
+  }, [selectedCategory, debouncedSearch, page, queryLocationId, setSearchParams]);
 
   const activeCategories = categories?.filter((c) => c.isActive && !c.parentId) || [];
   const activeItems = items.filter((i) => i.isActive && (!i.trackStock || i.stockQty > 0));
@@ -295,8 +333,14 @@ export default function Menu() {
   );
 }
 
-function buildItemsUrl(categoryId: string | null, search: string, page: number): string {
+function buildItemsUrl(
+  categoryId: string | null,
+  search: string,
+  page: number,
+  locationId: string
+): string {
   const params = new URLSearchParams();
+  params.set('locationId', locationId);
   if (categoryId) params.set('categoryId', categoryId);
   if (search) params.set('search', search);
   if (page > 1) params.set('page', String(page));

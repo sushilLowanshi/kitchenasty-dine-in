@@ -133,17 +133,25 @@ export async function getTableKioskSession(req: Request<{ id: string }>, res: Re
     cart = null;
   }
 
-  const orders = await prisma.order.findMany({
-    where: {
-      tableId: kiosk.tableId,
-      status: { in: [...OPEN_STATUSES] },
-    },
-    orderBy: { createdAt: 'asc' },
-    include: {
-      items: { include: { options: true } },
-      table: { select: { id: true, name: true } },
-    },
-  });
+  let orders: Awaited<ReturnType<typeof prisma.order.findMany>> = [];
+  try {
+    orders = await prisma.order.findMany({
+      where: {
+        tableId: kiosk.tableId,
+        status: { in: [...OPEN_STATUSES] },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+      include: {
+        items: { include: { options: true } },
+        table: { select: { id: true, name: true } },
+      },
+    });
+  } catch (err) {
+    // Fail soft so checkout is never stuck on "Loading your order…"
+    console.error('getTableKioskSession orders query failed:', err);
+    orders = [];
+  }
 
   res.json({
     success: true,

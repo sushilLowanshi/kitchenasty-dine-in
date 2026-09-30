@@ -11,10 +11,16 @@ export default function ElegantHeader() {
   const { t } = useTranslation();
   const { itemCount, setIsOpen: openCart } = useCart();
   const { settings } = useTheme();
-  const { tableName } = useKiosk();
+  const { tableName, locationName } = useKiosk();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const paths = storePaths(location.pathname);
+
+  const brandName = tableName
+    ? locationName
+      ? `${locationName} | ${tableName}`
+      : tableName
+    : settings.siteName;
 
   const navLinks = [
     { id: 'home', to: paths.home, label: t('nav.home') },
@@ -33,20 +39,21 @@ export default function ElegantHeader() {
     <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-50">
       {/* Centered logo top bar */}
       <div className="text-center py-3 border-b border-gray-100 dark:border-gray-800">
-        <Link to={paths.home} className="inline-flex items-center gap-2">
+        <Link to={paths.home} className="inline-flex items-center gap-2 max-w-full px-2">
           {settings.logo ? (
-            <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-full object-cover" />
+            <img src={settings.logo} alt={brandName} className="w-8 h-8 rounded-full object-cover shrink-0" />
           ) : (
-            <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center">
-              <span className="text-white font-bold text-sm">{settings.siteName.charAt(0)}</span>
+            <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center shrink-0">
+              <span className="text-white font-bold text-sm">{brandName.charAt(0)}</span>
             </div>
           )}
-          <span className="text-2xl font-light tracking-widest text-gray-900 dark:text-white uppercase">{settings.siteName}</span>
-          {tableName && (
-            <span className="text-sm font-medium tracking-wide text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-3 ml-1 normal-case">
-              {tableName}
-            </span>
-          )}
+          <span
+            className={`text-2xl font-light tracking-widest text-gray-900 dark:text-white truncate ${
+              tableName ? 'normal-case tracking-wide text-xl font-medium' : 'uppercase'
+            }`}
+          >
+            {brandName}
+          </span>
         </Link>
       </div>
 

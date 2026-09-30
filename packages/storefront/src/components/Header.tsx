@@ -13,10 +13,16 @@ function ClassicHeader() {
   const { t } = useTranslation();
   const { itemCount, setIsOpen: openCart } = useCart();
   const { settings } = useTheme();
-  const { tableName } = useKiosk();
+  const { tableName, locationName } = useKiosk();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const paths = storePaths(location.pathname);
+
+  const brandName = tableName
+    ? locationName
+      ? `${locationName} | ${tableName}`
+      : tableName
+    : settings.siteName;
 
   const navLinks = [
     { id: 'home', to: paths.home, label: t('nav.home') },
@@ -35,21 +41,16 @@ function ClassicHeader() {
     <header className="bg-white dark:bg-gray-900 shadow-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo + table name */}
-          <Link to={paths.home} className="flex items-center gap-2">
+          {/* Logo + restaurant | table */}
+          <Link to={paths.home} className="flex items-center gap-2 min-w-0">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-lg object-cover" />
+              <img src={settings.logo} alt={brandName} className="w-8 h-8 rounded-lg object-cover shrink-0" />
             ) : (
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{settings.siteName.charAt(0)}</span>
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
+                <span className="text-white font-bold text-sm">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-bold text-gray-900 dark:text-white">{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">
-                {tableName}
-              </span>
-            )}
+            <span className="text-xl font-bold text-gray-900 dark:text-white truncate">{brandName}</span>
           </Link>
 
           {/* Desktop nav */}

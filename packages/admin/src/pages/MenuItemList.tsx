@@ -43,6 +43,7 @@ export default function MenuItemList() {
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const fetchItems = (page = 1) => {
     setLoading(true);
@@ -79,6 +80,32 @@ export default function MenuItemList() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (
+      !confirm(
+        'Delete ALL menu items for your restaurant? Items with order history will be deactivated instead of deleted. This cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    setDeletingAll(true);
+    setError(null);
+    setImportMsg(null);
+    try {
+      const res = await api.delete<{
+        success: boolean;
+        message?: string;
+        data: { deleted: number; deactivated: number; total: number };
+      }>('/menu/items');
+      setImportMsg(res.message || `Cleared ${res.data?.total ?? 0} item(s).`);
+      fetchItems(1);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete all items');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   const downloadTemplate = async () => {
     try {
       const token = getStoredToken();
@@ -90,7 +117,7 @@ export default function MenuItemList() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'menu-items-import-template.xlsx';
+      a.download = 'kitchenasty-seed-menu-import.xlsx';
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
@@ -168,6 +195,16 @@ export default function MenuItemList() {
           >
             Add Item
           </Link>
+          {isManager && (
+            <button
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={deletingAll || loading || pagination.total === 0}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {deletingAll ? 'Deleting...' : 'Delete All Items'}
+            </button>
+          )}
         </div>
       </div>
 
