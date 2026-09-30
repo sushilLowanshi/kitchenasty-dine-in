@@ -9,7 +9,15 @@ import { kioskIdFromPath } from '../lib/kioskPath.js';
 interface Location {
   id: string;
   name: string;
-  address: string;
+}
+
+interface TableOption {
+  id: string;
+  name: string;
+  capacity: number;
+  isActive: boolean;
+  locationId?: string;
+  kiosk?: { id: string; isActive: boolean } | null;
 }
 
 interface TimeSlot {
@@ -62,49 +70,49 @@ function writeGuestReservations(scope: string, list: Reservation[]): void {
 export default function Reservations() {
   const { t } = useTranslation();
   const { user, token } = useAuth();
-  const { tableName } = useKiosk();
+  const { tableName, locationId: kioskLocationId } = useKiosk();
   const location = useLocation();
   const kioskId = kioskIdFromPath(location.pathname);
   const guestScope = kioskId || 'web';
 
-  const [locations, setLocations] = useState<Location[]>([]);
   const [myReservations, setMyReservations] = useState<Reservation[]>([]);
-  const [kioskTableId, setKioskTableId] = useState<string | null>(null);
+  const [tables, setTables] = useState<TableOption[]>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
 
   // Form state
   const [locationId, setLocationId] = useState('');
+  const [tableId, setTableId] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [partySize, setPartySize] = useState(2);
   const [comment, setComment] = useState('');
-  const [guestName, setGuestName] = useState('');
-  const [guestEmail, setGuestEmail] = useState('');
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
-  // Prefill guest name from table screen
-  useEffect(() => {
-    if (!user && tableName && !guestName) {
-      setGuestName(`Guest (${tableName})`);
-    }
-  }, [user, tableName, guestName]);
+  const selectedTable = tables.find((t) => t.id === tableId) || null;
+  const maxParty = selectedTable?.capacity || 20;
 
-  // Load locations
+  // Resolve location: kiosk first, else default location
   useEffect(() => {
+    if (kioskLocationId) {
+      setLocationId(kioskLocationId);
+      return;
+    }
     fetch(apiUrl('/api/locations'))
       .then((res) => res.json())
       .then((data) => {
         const list = (data.data || []) as Location[];
-        setLocations(list);
-        if (list.length === 1 && !locationId) setLocationId(list[0].id);
+        if (list[0]?.id) setLocationId(list[0].id);
       })
       .catch(() => {});
-  }, []);
+  }, [kioskLocationId]);
 
-  // Table screen: load table + location from kiosk
+  // Prefill current table screen when on kiosk
   useEffect(() => {
     if (!kioskId) return;
     fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}`))
@@ -112,13 +120,46 @@ export default function Reservations() {
       .then((body) => {
         if (!body?.success || !body.data?.table) return;
         const table = body.data.table as { id: string; name: string; locationId?: string };
-        setKioskTableId(table.id);
         if (table.locationId) setLocationId(table.locationId);
+        if (table.id) setTableId(table.id);
       })
       .catch(() => {});
   }, [kioskId]);
 
-  // Load customer reservations (logged-in) or guest session list
+  // Soft prefill guest name from table (user can edit)
+  useEffect(() => {
+    if (!user && tableName && !guestName) {
+      setGuestName(`Guest (${tableName})`);
+    }
+  }, [user, tableName, guestName]);
+
+  // Load all tables for dropdown
+  useEffect(() => {
+    if (!locationId) {
+      setTables([]);
+      return;
+    }
+    setLoadingTables(true);
+    fetch(apiUrl(`/api/locations/${encodeURIComponent(locationId)}/tables`))
+      .then((res) => res.json())
+      .then((data) => {
+        const list = ((data.data || []) as TableOption[]).filter((t) => t.isActive !== false);
+        setTables(list);
+        if (tableId && !list.some((t) => t.id === tableId)) {
+          setTableId('');
+        }
+      })
+      .catch(() => setTables([]))
+      .finally(() => setLoadingTables(false));
+  }, [locationId]);
+
+  // Clamp party size to selected table capacity
+  useEffect(() => {
+    if (selectedTable && partySize > selectedTable.capacity) {
+      setPartySize(selectedTable.capacity);
+    }
+  }, [selectedTable, partySize]);
+
   useEffect(() => {
     if (token) {
       fetch(apiUrl('/api/reservations/my-reservations'), {
@@ -132,7 +173,6 @@ export default function Reservations() {
     setMyReservations(readGuestReservations(guestScope));
   }, [token, success, guestScope]);
 
-  // Load availability when location, date, and party size change
   useEffect(() => {
     if (!locationId || !date) {
       setSlots([]);
@@ -156,7 +196,10 @@ export default function Reservations() {
       setError(t('reservations.selectDateFirst'));
       return;
     }
-
+    if (!tableId) {
+      setError('Please select a table');
+      return;
+    }
     if (!user && !guestName.trim()) {
       setError('Please enter your name');
       return;
@@ -172,13 +215,13 @@ export default function Reservations() {
         date,
         time,
         partySize,
+        tableId,
         comment: comment || undefined,
       };
       if (!user) {
         body.guestName = guestName.trim();
         if (guestEmail.trim()) body.guestEmail = guestEmail.trim();
       }
-      if (kioskTableId) body.tableId = kioskTableId;
 
       const res = await fetch(apiUrl('/api/reservations'), {
         method: 'POST',
@@ -219,24 +262,17 @@ export default function Reservations() {
       <h1 className="text-3xl font-bold text-gray-900 mb-8">{t('reservations.title')}</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Booking Form */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('reservations.bookTable')}</h2>
 
-          {/* Login banner commented out — guest booking enabled for dine-in
-          {!user && (
-            <div className="bg-yellow-50 text-yellow-800 text-sm p-3 rounded-lg mb-4">
-              <Link to="/login" className="underline font-medium">{t('nav.login')}</Link> {t('reservations.loginRequired').toLowerCase()}
-            </div>
-          )}
-          */}
-
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Guest contact — only when not logged in */}
+            {/* Customer name (required) + email (optional) */}
             {!user && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Customer Name *
+                  </label>
                   <input
                     type="text"
                     required
@@ -247,7 +283,9 @@ export default function Reservations() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email (optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Customer Email (optional)
+                  </label>
                   <input
                     type="email"
                     value={guestEmail}
@@ -259,17 +297,38 @@ export default function Reservations() {
               </div>
             )}
 
+            {/* Table dropdown — all tables with size */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('reservations.location')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Select Table *
+              </label>
               <select
-                value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                required
+                value={tableId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setTableId(id);
+                  const table = tables.find((t) => t.id === id);
+                  if (table && partySize > table.capacity) {
+                    setPartySize(table.capacity);
+                  }
+                }}
+                disabled={loadingTables || tables.length === 0}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none disabled:bg-gray-50"
               >
-                <option value="">{t('reservations.selectLocation')}</option>
-                {locations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>{loc.name}</option>
-                ))}
+                <option value="">
+                  {loadingTables ? 'Loading tables…' : 'Select a table'}
+                </option>
+                {tables.map((table) => {
+                  const hasScreen = Boolean(table.kiosk?.id && table.kiosk.isActive !== false);
+                  return (
+                    <option key={table.id} value={table.id}>
+                      {table.name} — {table.capacity}{' '}
+                      {table.capacity === 1 ? 'seat' : 'seats'}
+                      {hasScreen ? ' (table screen)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -287,18 +346,22 @@ export default function Reservations() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('reservations.partySize')}</label>
                 <select
-                  value={partySize}
+                  value={Math.min(partySize, maxParty)}
                   onChange={(e) => setPartySize(parseInt(e.target.value))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                 >
-                  {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>{n} {n === 1 ? t('reservations.guest', { count: n }) : t('reservations.guests', { count: n })}</option>
+                  {Array.from({ length: maxParty }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}{' '}
+                      {n === 1
+                        ? t('reservations.guest', { count: n })
+                        : t('reservations.guests', { count: n })}
+                    </option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Time Slots */}
             {locationId && date && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{t('reservations.availableSlots')}</label>
@@ -347,7 +410,7 @@ export default function Reservations() {
 
             <button
               type="submit"
-              disabled={submitting || !locationId || !date || !time}
+              disabled={submitting || !locationId || !tableId || !date || !time || (!user && !guestName.trim())}
               className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition-colors disabled:opacity-50"
             >
               {submitting ? t('reservations.booking') : t('reservations.bookNow')}
@@ -355,7 +418,6 @@ export default function Reservations() {
           </form>
         </div>
 
-        {/* My Reservations */}
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('reservations.myReservations')}</h2>
           {myReservations.length === 0 ? (
@@ -373,7 +435,10 @@ export default function Reservations() {
                     </span>
                   </div>
                   <div className="text-sm text-gray-500">
-                    {r.location?.name} &middot; {r.partySize} {r.partySize === 1 ? t('reservations.guest', { count: 1 }) : t('reservations.guests', { count: r.partySize })}
+                    {r.location?.name} &middot; {r.partySize}{' '}
+                    {r.partySize === 1
+                      ? t('reservations.guest', { count: 1 })
+                      : t('reservations.guests', { count: r.partySize })}
                     {r.table && ` \u00B7 Table: ${r.table.name}`}
                   </div>
                   {r.comment && (

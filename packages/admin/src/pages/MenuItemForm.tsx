@@ -84,6 +84,8 @@ export default function MenuItemForm() {
   const [allergens, setAllergens] = useState<AllergenOption[]>([]);
   const [mealtimes, setMealtimes] = useState<MealtimeOption[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -200,7 +202,18 @@ export default function MenuItemForm() {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !id) return;
+    if (!file) return;
+
+    // On create, keep file until the item exists, then upload
+    if (!isEdit || !id) {
+      if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+      setPendingImageFile(file);
+      setPendingImagePreview(URL.createObjectURL(file));
+      setImageUrl(null);
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     setError(null);
     try {
@@ -212,11 +225,17 @@ export default function MenuItemForm() {
       setError(err.message);
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
   const handleImageRemove = async () => {
-    if (!id) return;
+    if (!isEdit || !id) {
+      if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+      setPendingImageFile(null);
+      setPendingImagePreview(null);
+      return;
+    }
     setUploading(true);
     setError(null);
     try {
@@ -249,7 +268,27 @@ export default function MenuItemForm() {
         const { slug: _, ...updateBody } = body;
         await api.patch(`/menu/items/${id}`, updateBody);
       } else {
-        await api.post('/menu/items', body);
+        const res = await api.post<{ data: { id: string } }>('/menu/items', body);
+        const newId = res.data?.id;
+        if (newId && pendingImageFile) {
+          setUploading(true);
+          try {
+            const formData = new FormData();
+            formData.append('image', pendingImageFile);
+            await api.upload(`/menu/items/${newId}/image`, formData);
+          } catch (uploadErr: any) {
+            // Item created; warn but still leave form so user can retry image on edit
+            setError(
+              `Item created, but image upload failed: ${uploadErr.message}. You can add the image from Edit.`
+            );
+            setSaving(false);
+            setUploading(false);
+            navigate(`/menu/items/${newId}`);
+            return;
+          } finally {
+            setUploading(false);
+          }
+        }
       }
       navigate('/menu/items');
     } catch (err: any) {
@@ -381,49 +420,50 @@ export default function MenuItemForm() {
           </div>
         </section>
 
-        {/* Image Upload */}
-        {isEdit && (
-          <section className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Image</h3>
-            <div className="flex items-start gap-6">
-              {imageUrl ? (
-                <div className="relative">
-                  <img
-                    src={imageUrl}
-                    alt={form.name}
-                    className="w-40 h-40 object-cover rounded-lg border border-gray-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleImageRemove}
-                    disabled={uploading}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 disabled:opacity-50"
-                    aria-label="Remove image"
-                  >
-                    X
-                  </button>
-                </div>
-              ) : (
-                <div className="w-40 h-40 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center">
-                  <span className="text-sm text-gray-400">No image</span>
-                </div>
-              )}
-              <div>
-                <label className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 cursor-pointer disabled:opacity-50 transition-colors">
-                  {uploading ? 'Uploading...' : 'Upload Image'}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={handleImageUpload}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                </label>
-                <p className="text-xs text-gray-400 mt-2">JPEG, PNG, WebP, or GIF. Max 5MB.</p>
+        {/* Image Upload — available on create and edit */}
+        <section className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Image</h3>
+          <div className="flex items-start gap-6">
+            {(imageUrl || pendingImagePreview) ? (
+              <div className="relative">
+                <img
+                  src={pendingImagePreview || imageUrl || ''}
+                  alt={form.name || 'Menu item'}
+                  className="w-40 h-40 object-cover rounded-lg border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={handleImageRemove}
+                  disabled={uploading}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 disabled:opacity-50"
+                  aria-label="Remove image"
+                >
+                  X
+                </button>
               </div>
+            ) : (
+              <div className="w-40 h-40 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center">
+                <span className="text-sm text-gray-400">No image</span>
+              </div>
+            )}
+            <div>
+              <label className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 cursor-pointer disabled:opacity-50 transition-colors">
+                {uploading ? 'Uploading...' : pendingImageFile ? 'Change Image' : 'Upload Image'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={handleImageUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+              <p className="text-xs text-gray-400 mt-2">JPEG, PNG, WebP, or GIF. Max 5MB.</p>
+              {!isEdit && pendingImageFile && (
+                <p className="text-xs text-primary-600 mt-1">Image will be uploaded when you create the item.</p>
+              )}
             </div>
-          </section>
-        )}
+          </div>
+        </section>
 
         {/* Menu Options */}
         <section className="bg-white rounded-lg shadow p-6">

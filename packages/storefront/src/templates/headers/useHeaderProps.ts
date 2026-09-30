@@ -15,10 +15,17 @@ export function useHeaderProps() {
   const { user, logout } = useAuth();
   const { itemCount, setIsOpen: openCart } = useCart();
   const { settings } = useTheme();
-  const { tableName } = useKiosk();
+  const { tableName, locationName } = useKiosk();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const paths = storePaths(location.pathname);
+
+  // On table screens: restaurant name | table screen name (never fall back to global siteName while kiosk is active)
+  const brandName = tableName
+    ? locationName
+      ? `${locationName} | ${tableName}`
+      : tableName
+    : settings.siteName;
 
   const navLinks = [
     { id: 'home', to: paths.home, label: t('nav.home') },
@@ -40,7 +47,8 @@ export function useHeaderProps() {
     itemCount,
     openCart,
     settings,
-    tableName,
+    brandName,
+    tableName: null as string | null, // folded into brandName on kiosk
     showCustomerAuth: SHOW_CUSTOMER_AUTH,
     navLinks,
     isActive,

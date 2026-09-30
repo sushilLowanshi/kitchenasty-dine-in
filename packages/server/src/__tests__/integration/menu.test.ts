@@ -73,12 +73,17 @@ describe('Menu API - Integration Tests', () => {
     it('returns list of categories (no auth required)', async () => {
       mockedPrisma.category.findMany.mockResolvedValue([{ ...sampleCategory, children: [], _count: { menuItems: 3 } }] as any);
 
-      const res = await request(app).get('/api/menu/categories');
+      const res = await request(app).get('/api/menu/categories').query({ locationId: 'loc-1' });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('Appetizers');
+    });
+
+    it('requires locationId for public list', async () => {
+      const res = await request(app).get('/api/menu/categories');
+      expect(res.status).toBe(400);
     });
   });
 
@@ -122,8 +127,14 @@ describe('Menu API - Integration Tests', () => {
     });
 
     it('creates category with MANAGER token', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.category.findUnique.mockResolvedValue(null);
-      mockedPrisma.category.create.mockResolvedValue({ id: 'cat-2', ...newCategory, parent: null } as any);
+      mockedPrisma.category.create.mockResolvedValue({
+        id: 'cat-2',
+        ...newCategory,
+        locationId: 'loc-1',
+        parent: null,
+      } as any);
 
       const res = await request(app)
         .post('/api/menu/categories')
@@ -132,6 +143,17 @@ describe('Menu API - Integration Tests', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
+    });
+
+    it('rejects MANAGER without assigned location', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: null } as any);
+
+      const res = await request(app)
+        .post('/api/menu/categories')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send(newCategory);
+
+      expect(res.status).toBe(403);
     });
 
     it('returns 409 for duplicate slug', async () => {
@@ -239,12 +261,17 @@ describe('Menu API - Integration Tests', () => {
       }] as any);
       mockedPrisma.menuItem.count.mockResolvedValue(1);
 
-      const res = await request(app).get('/api/menu/items');
+      const res = await request(app).get('/api/menu/items').query({ locationId: 'loc-1' });
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('Caesar Salad');
       expect(res.body.pagination.total).toBe(1);
+    });
+
+    it('requires locationId for public list', async () => {
+      const res = await request(app).get('/api/menu/items');
+      expect(res.status).toBe(400);
     });
   });
 
@@ -287,11 +314,13 @@ describe('Menu API - Integration Tests', () => {
     });
 
     it('creates item with MANAGER token', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: 'loc-1' } as any);
       mockedPrisma.menuItem.findUnique.mockResolvedValue(null);
-      mockedPrisma.category.findUnique.mockResolvedValue(sampleCategory as any);
+      mockedPrisma.category.findUnique.mockResolvedValue({ ...sampleCategory, locationId: 'loc-1' } as any);
       mockedPrisma.menuItem.create.mockResolvedValue({
         id: 'item-2',
         ...newItem,
+        locationId: 'loc-1',
         category: { id: 'cat-1', name: 'Appetizers' },
         options: [],
         allergens: [],
@@ -305,6 +334,17 @@ describe('Menu API - Integration Tests', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
+    });
+
+    it('rejects MANAGER without assigned location', async () => {
+      mockedPrisma.user.findUnique.mockResolvedValue({ locationId: null } as any);
+
+      const res = await request(app)
+        .post('/api/menu/items')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send(newItem);
+
+      expect(res.status).toBe(403);
     });
 
     it('returns 409 for duplicate slug', async () => {

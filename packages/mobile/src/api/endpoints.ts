@@ -46,12 +46,20 @@ export const authApi = {
 
 // ── Menu ──────────────────────────────────────────────
 export const menuApi = {
-  getCategories() {
-    return apiClient<ApiResponse<Category[]>>('/api/menu/categories', { auth: false });
+  getCategories(locationId?: string) {
+    const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
+    return apiClient<ApiResponse<Category[]>>(`/api/menu/categories${qs}`, { auth: false });
   },
 
-  getItems(params?: { categoryId?: string; search?: string; page?: number; limit?: number }) {
+  getItems(params?: {
+    categoryId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    locationId?: string;
+  }) {
     const qs = new URLSearchParams();
+    if (params?.locationId) qs.set('locationId', params.locationId);
     if (params?.categoryId) qs.set('categoryId', params.categoryId);
     if (params?.search) qs.set('search', params.search);
     if (params?.page) qs.set('page', String(params.page));

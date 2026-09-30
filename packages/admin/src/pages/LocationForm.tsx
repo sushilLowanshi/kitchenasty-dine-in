@@ -95,8 +95,15 @@ export default function LocationForm() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [managerInfo, setManagerInfo] = useState<{ id: string; email: string; name: string; isActive: boolean } | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<{
+    id: string;
+    email: string;
+    expiresAt: string;
+    inviteLink: string;
+  } | null>(null);
   const [inviteManagerEmail, setInviteManagerEmail] = useState('');
   const [invitingManager, setInvitingManager] = useState(false);
+  const [inviteActionBusy, setInviteActionBusy] = useState(false);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -137,6 +144,10 @@ export default function LocationForm() {
         const manager = (loc.staff || []).find((s: any) => s.role === 'MANAGER' && s.isActive)
           || (loc.staff || []).find((s: any) => s.role === 'MANAGER');
         setManagerInfo(manager || null);
+        setPendingInvite(loc.pendingManagerInvite || null);
+        if (loc.pendingManagerInvite?.email) {
+          setInviteManagerEmail(loc.pendingManagerInvite.email);
+        }
         setLoading(false);
       })
       .catch((err) => { setError(err.message); setLoading(false); });
@@ -265,26 +276,80 @@ export default function LocationForm() {
     setError(null);
     try {
       const res = await api.post<{
-        data: { inviteLink?: string; emailSent?: boolean; emailError?: string | null; email: string };
+        data: {
+          inviteLink?: string;
+          emailSent?: boolean;
+          emailError?: string | null;
+          email: string;
+          resent?: boolean;
+          id?: string;
+          expiresAt?: string;
+        };
       }>('/staff/invite', {
         email: inviteManagerEmail.trim(),
         role: 'MANAGER',
         locationId: id,
+        // If another email is pending, replace it so admin can invite a new address
+        replacePending: true,
       });
       const link = res.data.inviteLink;
       const mailNote = res.data.emailSent
         ? `Email sent to ${res.data.email}.`
-        : `Email not delivered${res.data.emailError ? ` (${res.data.emailError})` : ''}. Copy the invite link below.`;
+        : `Email not delivered${res.data.emailError ? ` (${res.data.emailError})` : ''}. Use Copy link / Open link below.`;
       setInviteNotice(
-        link
-          ? `${mailNote} Link: ${link}`
-          : `Manager invite created for ${inviteManagerEmail.trim()}. ${mailNote}`
+        `${res.data.resent ? 'Invite resent' : 'Manager invite created'} for ${res.data.email}. ${mailNote}`
       );
-      setInviteManagerEmail('');
+      if (link && res.data.id) {
+        setPendingInvite({
+          id: res.data.id,
+          email: res.data.email,
+          expiresAt: res.data.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          inviteLink: link,
+        });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setInvitingManager(false);
+    }
+  };
+
+  const resendPendingInvite = async () => {
+    if (!pendingInvite) return;
+    setInviteActionBusy(true);
+    setError(null);
+    try {
+      const res = await api.post<{
+        data: { inviteLink: string; emailSent: boolean; emailError: string | null; email: string };
+      }>(`/staff/invites/${pendingInvite.id}/resend`, {});
+      setPendingInvite({ ...pendingInvite, inviteLink: res.data.inviteLink });
+      const mailNote = res.data.emailSent
+        ? `Email resent to ${res.data.email}.`
+        : `Email not delivered${res.data.emailError ? ` (${res.data.emailError})` : ''}. Copy/open the link below.`;
+      setInviteNotice(mailNote);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setInviteActionBusy(false);
+    }
+  };
+
+  const cancelPendingInvite = async () => {
+    if (!pendingInvite) return;
+    if (!confirm(`Cancel pending invite for ${pendingInvite.email}? You can invite again after this.`)) {
+      return;
+    }
+    setInviteActionBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/staff/invites/${pendingInvite.id}`);
+      setPendingInvite(null);
+      setInviteNotice(`Cancelled invite for ${pendingInvite.email}. You can send a new invite now.`);
+      setInviteManagerEmail('');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setInviteActionBusy(false);
     }
   };
 
@@ -614,11 +679,65 @@ export default function LocationForm() {
                 </p>
               )}
 
+              {/* Pending invite recovery — copy link / resend / cancel */}
+              {pendingInvite && (!managerInfo || !managerInfo.isActive) && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">
+                      Pending invite: {pendingInvite.email}
+                    </p>
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Email may not have arrived. Copy or open the link below, or cancel and invite a different email.
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    readOnly
+                    value={pendingInvite.inviteLink}
+                    className="w-full border border-amber-200 bg-white rounded-lg px-3 py-2 text-xs text-gray-700"
+                    aria-label="Pending invite link"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => copyLink(pendingInvite.inviteLink)}
+                      className="px-3 py-1.5 border border-amber-400 text-amber-900 rounded-lg text-sm font-medium hover:bg-amber-100"
+                    >
+                      Copy link
+                    </button>
+                    <a
+                      href={pendingInvite.inviteLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700"
+                    >
+                      Open link
+                    </a>
+                    <button
+                      type="button"
+                      disabled={inviteActionBusy}
+                      onClick={resendPendingInvite}
+                      className="px-3 py-1.5 border border-primary-600 text-primary-700 rounded-lg text-sm font-medium hover:bg-primary-50 disabled:opacity-50"
+                    >
+                      Resend email
+                    </button>
+                    <button
+                      type="button"
+                      disabled={inviteActionBusy}
+                      onClick={cancelPendingInvite}
+                      className="px-3 py-1.5 border border-red-300 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Cancel invite
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {(!managerInfo || !managerInfo.isActive) && (
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="flex-1 min-w-[200px]">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Invite replacement manager
+                      {pendingInvite ? 'Invite different email (replaces pending)' : 'Invite replacement manager'}
                     </label>
                     <input
                       type="email"
@@ -634,7 +753,11 @@ export default function LocationForm() {
                     onClick={inviteReplacementManager}
                     className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
                   >
-                    {invitingManager ? 'Sending...' : 'Send Invite'}
+                    {invitingManager
+                      ? 'Sending...'
+                      : pendingInvite
+                        ? 'Replace & Send'
+                        : 'Send Invite'}
                   </button>
                 </div>
               )}

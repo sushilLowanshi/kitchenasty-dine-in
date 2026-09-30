@@ -12,6 +12,7 @@ import {
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  deleteAllMenuItems,
   uploadMenuItemImage,
   deleteMenuItemImage,
   downloadMenuImportTemplate,
@@ -75,6 +76,13 @@ router.post(
 router.get('/items/:id', getMenuItem);
 router.post('/items', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), createMenuItem);
 router.patch('/items/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), updateMenuItem);
+router.delete(
+  '/items',
+  authenticate,
+  requireStaff,
+  requireRole('MANAGER'),
+  deleteAllMenuItems
+);
 router.delete('/items/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), deleteMenuItem);
 router.post('/items/:id/image', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), upload.single('image'), uploadMenuItemImage);
 router.delete('/items/:id/image', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), deleteMenuItemImage);
