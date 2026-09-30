@@ -3,17 +3,14 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function MinimalHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-white dark:bg-gray-950 sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
           <Link to={paths.home} className="flex items-center text-lg font-medium text-gray-900 dark:text-white">
-            <span>{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span>{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-6">

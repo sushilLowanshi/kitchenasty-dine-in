@@ -20,24 +20,8 @@ async function main() {
     },
   });
 
-  // Create manager user
+  // Create manager user (assigned to downtown location after it is created below)
   const managerPassword = await bcrypt.hash('manager123', 10);
-  await prisma.user.upsert({
-    where: { email: 'manager@kitchenasty.com' },
-    update: {
-      password: managerPassword,
-      name: 'Manager',
-      role: 'MANAGER',
-      isActive: true,
-    },
-    create: {
-      email: 'manager@kitchenasty.com',
-      password: managerPassword,
-      name: 'Manager',
-      role: 'MANAGER',
-      isActive: true,
-    },
-  });
 
   // Create a customer
   const customerPassword = await bcrypt.hash('customer123', 10);
@@ -89,6 +73,26 @@ async function main() {
       minOrderPickup: 0,
       deliveryLeadTime: 35,
       pickupLeadTime: 15,
+    },
+  });
+
+  // Manager scoped to this restaurant so menu CRUD stays location-specific
+  await prisma.user.upsert({
+    where: { email: 'manager@kitchenasty.com' },
+    update: {
+      password: managerPassword,
+      name: 'Manager',
+      role: 'MANAGER',
+      isActive: true,
+      locationId: location.id,
+    },
+    create: {
+      email: 'manager@kitchenasty.com',
+      password: managerPassword,
+      name: 'Manager',
+      role: 'MANAGER',
+      isActive: true,
+      locationId: location.id,
     },
   });
 

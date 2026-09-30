@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function SleekHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-gray-950 border-b border-gray-800 sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function SleekHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-lg object-cover" />
+              <img src={settings.logo} alt={brandName} className="w-8 h-8 rounded-lg object-cover" />
             ) : (
               <div className="w-8 h-8 bg-primary-600/20 rounded-lg flex items-center justify-center border border-primary-500/30">
-                <span className="text-primary-400 font-bold text-sm">{settings.siteName.charAt(0)}</span>
+                <span className="text-primary-400 font-bold text-sm">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-semibold text-white">{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-xl font-semibold text-white">{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

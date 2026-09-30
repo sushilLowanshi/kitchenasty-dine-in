@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function RetroHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-amber-100 dark:bg-gray-900 border-b-4 border-primary-600 sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function RetroHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-9 h-9 rounded object-cover border-2 border-primary-600" />
+              <img src={settings.logo} alt={brandName} className="w-9 h-9 rounded object-cover border-2 border-primary-600" />
             ) : (
               <div className="w-9 h-9 bg-primary-600 rounded flex items-center justify-center border-2 border-primary-800">
-                <span className="text-white font-bold text-lg" style={{ fontFamily: 'Georgia, serif' }}>{settings.siteName.charAt(0)}</span>
+                <span className="text-white font-bold text-lg" style={{ fontFamily: 'Georgia, serif' }}>{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-bold text-gray-900 dark:text-white" style={{ fontFamily: 'Georgia, serif' }}>{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-xl font-bold text-gray-900 dark:text-white" style={{ fontFamily: 'Georgia, serif' }}>{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

@@ -56,6 +56,12 @@ export async function findPendingManagerInvite(locationId: string) {
       usedAt: null,
       expiresAt: { gt: new Date() },
     },
-    select: { id: true, email: true, expiresAt: true },
+    select: { id: true, email: true, token: true, expiresAt: true },
   });
+}
+
+/** Build admin accept-invite URL for a raw token. */
+export function buildInviteLink(token: string): string {
+  const adminUrl = process.env.ADMIN_URL || 'http://localhost:5173';
+  return `${adminUrl}/accept-invite?token=${token}`;
 }

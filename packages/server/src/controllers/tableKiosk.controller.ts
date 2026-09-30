@@ -15,6 +15,7 @@ const tableSelect = {
   name: true,
   locationId: true,
   isActive: true,
+  location: { select: { id: true, name: true } },
 } as const;
 
 function kioskPath(id: string): string {
@@ -50,7 +51,12 @@ function publicKiosk(kiosk: {
   id: string;
   isActive: boolean;
   createdAt: Date;
-  table: { id: string; name: string; locationId?: string };
+  table: {
+    id: string;
+    name: string;
+    locationId?: string;
+    location?: { id: string; name: string } | null;
+  };
 }) {
   return {
     id: kiosk.id,
@@ -62,6 +68,7 @@ function publicKiosk(kiosk: {
       id: kiosk.table.id,
       name: kiosk.table.name,
       locationId: kiosk.table.locationId,
+      locationName: kiosk.table.location?.name ?? null,
     },
   };
 }
@@ -122,7 +129,17 @@ export async function createTableKiosk(req: Request, res: Response): Promise<voi
 export async function getTableKiosk(req: Request<{ id: string }>, res: Response): Promise<void> {
   const kiosk = await prisma.tableKiosk.findUnique({
     where: { id: req.params.id },
-    include: { table: { select: { id: true, name: true, isActive: true, locationId: true } } },
+    include: {
+      table: {
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          locationId: true,
+          location: { select: { id: true, name: true } },
+        },
+      },
+    },
   });
   if (!kiosk || !kiosk.table.isActive) {
     res.status(404).json({ success: false, error: 'Table screen not found' });

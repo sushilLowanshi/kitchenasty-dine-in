@@ -5,6 +5,8 @@ import {
   updateStaff,
   deactivateStaff,
   inviteStaff,
+  cancelInvite,
+  resendInvite,
   validateInviteToken,
   acceptInvite,
 } from '../controllers/staff.controller.js';
@@ -19,6 +21,20 @@ router.post('/accept-invite', acceptInvite);
 // Authenticated routes
 router.get('/', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), listStaff);
 router.post('/invite', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), inviteStaff);
+router.post(
+  '/invites/:id/resend',
+  authenticate,
+  requireStaff,
+  requireRole('SUPER_ADMIN', 'MANAGER'),
+  resendInvite
+);
+router.delete(
+  '/invites/:id',
+  authenticate,
+  requireStaff,
+  requireRole('SUPER_ADMIN', 'MANAGER'),
+  cancelInvite
+);
 router.get('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), getStaff);
 router.patch('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), updateStaff);
 router.delete('/:id', authenticate, requireStaff, requireRole('SUPER_ADMIN', 'MANAGER'), deactivateStaff);

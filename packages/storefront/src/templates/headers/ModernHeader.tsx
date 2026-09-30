@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function ModernHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-200/50 dark:border-gray-700/50 sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function ModernHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-xl object-cover" />
+              <img src={settings.logo} alt={brandName} className="w-8 h-8 rounded-xl object-cover" />
             ) : (
               <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{settings.siteName.charAt(0)}</span>
+                <span className="text-white font-bold text-sm">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-semibold text-gray-900 dark:text-white">{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-xl font-semibold text-gray-900 dark:text-white">{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

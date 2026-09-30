@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function VibrantHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-gradient-to-r from-primary-600 via-secondary-600 to-primary-600 text-white sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function VibrantHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-8 h-8 rounded-lg object-cover ring-2 ring-white/30" />
+              <img src={settings.logo} alt={brandName} className="w-8 h-8 rounded-lg object-cover ring-2 ring-white/30" />
             ) : (
               <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center ring-2 ring-white/30">
-                <span className="text-white font-bold text-sm">{settings.siteName.charAt(0)}</span>
+                <span className="text-white font-bold text-sm">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-bold">{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-xl font-bold">{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
