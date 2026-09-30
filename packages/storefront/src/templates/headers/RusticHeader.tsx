@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function RusticHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-stone-100 dark:bg-stone-900 border-b-2 border-stone-300 dark:border-stone-700 sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function RusticHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-2">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-9 h-9 rounded-md object-cover border border-stone-300" />
+              <img src={settings.logo} alt={brandName} className="w-9 h-9 rounded-md object-cover border border-stone-300" />
             ) : (
               <div className="w-9 h-9 bg-stone-700 rounded-md flex items-center justify-center border border-stone-500">
-                <span className="text-stone-100 font-bold text-sm">{settings.siteName.charAt(0)}</span>
+                <span className="text-stone-100 font-bold text-sm">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-xl font-bold text-stone-800 dark:text-stone-200" style={{ fontVariant: 'small-caps' }}>{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-xl font-bold text-stone-800 dark:text-stone-200" style={{ fontVariant: 'small-caps' }}>{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

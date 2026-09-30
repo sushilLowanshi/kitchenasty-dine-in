@@ -6,7 +6,7 @@ import { useCart } from '../context/CartContext.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
 import { useKiosk } from '../context/KioskContext.js';
-import { apiUrl, API_ORIGIN } from '../lib/apiBase.js';
+import { apiUrl, API_ORIGIN, parseApiJson } from '../lib/apiBase.js';
 import { kioskIdFromPath, storePaths } from '../lib/kioskPath.js';
 import { getActiveOrderIds, setActiveOrderId, setActiveOrderIds, addActiveOrderId, removeActiveOrderId, clearActiveOrderId } from '../lib/activeOrder.js';
 // Order status tracker is shown on each item instead of a single checkout banner.
@@ -174,7 +174,7 @@ export default function Checkout() {
       if (kioskId) {
         try {
           const res = await fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`));
-          const data = await res.json();
+          const data = await parseApiJson<{ success: boolean; data?: { orders?: Record<string, unknown>[] } }>(res);
           if (cancelled) return;
           if (!data.success) {
             setLoadingActiveOrder(false);
@@ -395,7 +395,7 @@ export default function Checkout() {
     if (!kioskId) return placedOrdersRef.current;
     try {
       const res = await fetch(apiUrl(`/api/table-kiosks/${encodeURIComponent(kioskId)}/session`));
-      const data = await res.json();
+      const data = await parseApiJson<{ success: boolean; data?: { orders?: Record<string, unknown>[] } }>(res);
       if (!data.success) return placedOrdersRef.current;
       const orders = ((data.data?.orders as Record<string, unknown>[]) || [])
         .map((o) => mapApiOrder(o))
@@ -451,8 +451,11 @@ export default function Checkout() {
         headers,
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to place order');
+      const data = await parseApiJson<{ success?: boolean; error?: string | unknown; data?: Record<string, unknown> }>(res);
+      if (!res.ok) {
+        const errMsg = typeof data.error === 'string' ? data.error : 'Failed to place order';
+        throw new Error(errMsg);
+      }
 
       clear();
       const created = mapApiOrder(data.data as Record<string, unknown>);

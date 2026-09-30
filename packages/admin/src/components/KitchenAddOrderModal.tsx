@@ -160,8 +160,17 @@ export default function KitchenAddOrderModal({ open, onClose, onPlaced }: Props)
     setLoadingMenu(true);
     setError('');
 
-    // Same catalog as storefront: public list (staff JWT location scope can return 0 items)
-    const params = new URLSearchParams({ limit: '50' });
+    // Restaurant-scoped menu for the selected table (or staff location)
+    const menuLocationId =
+      selectedKiosk?.table.locationId || locationId || null;
+    if (!menuLocationId) {
+      setError('No restaurant linked to this table');
+      setMenuItems([]);
+      setLoadingMenu(false);
+      return;
+    }
+
+    const params = new URLSearchParams({ limit: '50', locationId: menuLocationId });
     if (search.trim()) params.set('search', search.trim());
 
     fetch(apiUrl(`/api/menu/items?${params}`))
@@ -181,7 +190,7 @@ export default function KitchenAddOrderModal({ open, onClose, onPlaced }: Props)
     return () => {
       cancelled = true;
     };
-  }, [open, step, search]);
+  }, [open, step, search, selectedKiosk?.table.locationId, locationId]);
 
   if (!open) return null;
 

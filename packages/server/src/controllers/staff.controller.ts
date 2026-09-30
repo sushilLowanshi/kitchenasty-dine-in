@@ -7,10 +7,12 @@ import { generateToken } from '../middleware/auth.js';
 import { sendEmail, staffInvitationEmail } from '../lib/email.js';
 import { auditLog } from '../lib/audit.js';
 import {
+  buildInviteLink,
   findActiveManager,
   findPendingManagerInvite,
   getStaffLocationId,
   isSuperAdmin,
+  assertLocationAccess,
 } from '../lib/locationScope.js';
 
 // ============================================================
@@ -284,8 +286,7 @@ export async function createAndSendInvite(opts: {
     },
   });
 
-  const adminUrl = process.env.ADMIN_URL || 'http://localhost:5173';
-  const inviteLink = `${adminUrl}/accept-invite?token=${token}`;
+  const inviteLink = buildInviteLink(token);
   const emailContent = staffInvitationEmail({ email: opts.email, role: opts.role, inviteLink });
   const mailResult = await sendEmail({ to: opts.email, ...emailContent });
 
@@ -319,6 +320,8 @@ const inviteStaffSchema = z.object({
   name: z.string().optional(),
   role: z.enum(['SUPER_ADMIN', 'MANAGER', 'STAFF']).optional(),
   locationId: z.string().optional(),
+  /** When true, cancel any existing pending manager invite for this location first. */
+  replacePending: z.boolean().optional(),
 });
 
 export async function inviteStaff(req: Request, res: Response): Promise<void> {
@@ -361,7 +364,7 @@ export async function inviteStaff(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const { email } = parsed.data;
+  const { email, replacePending } = parsed.data;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
@@ -380,11 +383,52 @@ export async function inviteStaff(req: Request, res: Response): Promise<void> {
     }
     const pending = await findPendingManagerInvite(locationId);
     if (pending) {
-      res.status(409).json({
-        success: false,
-        error: `A pending manager invite already exists for ${pending.email}`,
-      });
-      return;
+      // Same email → treat as resend (recover lost link)
+      if (pending.email.toLowerCase() === email.toLowerCase()) {
+        const inviteLink = buildInviteLink(pending.token);
+        const emailContent = staffInvitationEmail({
+          email: pending.email,
+          role: 'MANAGER',
+          inviteLink,
+        });
+        const mailResult = await sendEmail({ to: pending.email, ...emailContent });
+        auditLog(req, {
+          action: 'update',
+          entity: 'Staff',
+          entityId: pending.id,
+          details: { resend: true, email: pending.email, emailSent: mailResult.sent },
+        });
+        res.status(200).json({
+          success: true,
+          data: {
+            id: pending.id,
+            email: pending.email,
+            role: 'MANAGER',
+            locationId,
+            expiresAt: pending.expiresAt,
+            inviteLink,
+            emailSent: mailResult.sent,
+            emailError: mailResult.error ?? null,
+            resent: true,
+          },
+        });
+        return;
+      }
+
+      if (replacePending) {
+        await prisma.inviteToken.delete({ where: { id: pending.id } });
+      } else {
+        res.status(409).json({
+          success: false,
+          error: `A pending manager invite already exists for ${pending.email}. Cancel it or resend to that email.`,
+          data: {
+            pendingInviteId: pending.id,
+            pendingEmail: pending.email,
+            inviteLink: buildInviteLink(pending.token),
+          },
+        });
+        return;
+      }
     }
   }
 
@@ -407,6 +451,97 @@ export async function inviteStaff(req: Request, res: Response): Promise<void> {
       inviteLink: result.inviteLink,
       emailSent: result.emailSent,
       emailError: result.emailError,
+    },
+  });
+}
+
+/** Cancel (delete) a pending unused invite. Super admin, or manager for own location staff invites. */
+export async function cancelInvite(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const invite = await prisma.inviteToken.findUnique({ where: { id: req.params.id } });
+  if (!invite) {
+    res.status(404).json({ success: false, error: 'Invite not found' });
+    return;
+  }
+  if (invite.usedAt) {
+    res.status(400).json({ success: false, error: 'Invite already used' });
+    return;
+  }
+
+  if (!isSuperAdmin(req)) {
+    const staffLocationId = await getStaffLocationId(req);
+    if (!staffLocationId || invite.locationId !== staffLocationId || invite.role !== 'STAFF') {
+      res.status(403).json({ success: false, error: 'Not allowed to cancel this invite' });
+      return;
+    }
+  } else if (invite.locationId) {
+    const scopeError = await assertLocationAccess(req, invite.locationId);
+    if (scopeError) {
+      res.status(403).json({ success: false, error: scopeError });
+      return;
+    }
+  }
+
+  await prisma.inviteToken.delete({ where: { id: invite.id } });
+  auditLog(req, {
+    action: 'delete',
+    entity: 'Staff',
+    entityId: invite.id,
+    details: { cancelInvite: true, email: invite.email, role: invite.role },
+  });
+
+  res.json({ success: true, message: 'Invite cancelled' });
+}
+
+/** Resend email + return invite link for a pending invite. */
+export async function resendInvite(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const invite = await prisma.inviteToken.findUnique({ where: { id: req.params.id } });
+  if (!invite) {
+    res.status(404).json({ success: false, error: 'Invite not found' });
+    return;
+  }
+  if (invite.usedAt) {
+    res.status(400).json({ success: false, error: 'Invite already used' });
+    return;
+  }
+  if (invite.expiresAt < new Date()) {
+    res.status(400).json({ success: false, error: 'Invite has expired. Cancel it and send a new one.' });
+    return;
+  }
+
+  if (!isSuperAdmin(req)) {
+    const staffLocationId = await getStaffLocationId(req);
+    if (!staffLocationId || invite.locationId !== staffLocationId) {
+      res.status(403).json({ success: false, error: 'Not allowed to resend this invite' });
+      return;
+    }
+  }
+
+  const inviteLink = buildInviteLink(invite.token);
+  const emailContent = staffInvitationEmail({
+    email: invite.email,
+    role: invite.role,
+    inviteLink,
+  });
+  const mailResult = await sendEmail({ to: invite.email, ...emailContent });
+
+  auditLog(req, {
+    action: 'update',
+    entity: 'Staff',
+    entityId: invite.id,
+    details: { resend: true, email: invite.email, emailSent: mailResult.sent },
+  });
+
+  res.json({
+    success: true,
+    data: {
+      id: invite.id,
+      email: invite.email,
+      role: invite.role,
+      locationId: invite.locationId,
+      expiresAt: invite.expiresAt,
+      inviteLink,
+      emailSent: mailResult.sent,
+      emailError: mailResult.error ?? null,
     },
   });
 }

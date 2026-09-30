@@ -11,11 +11,11 @@ test.describe('Storefront Reservations Page', () => {
     await expect(page.getByRole('heading', { name: 'Book a Table' })).toBeVisible();
   });
 
-  test('displays location selector', async ({ page }) => {
+  test('displays table selector', async ({ page }) => {
     await page.goto('/reservations');
-    const locationSelect = page.getByRole('main').locator('select').first();
-    await expect(locationSelect).toBeVisible();
-    await expect(locationSelect).toContainText('Select Location');
+    const tableSelect = page.getByRole('main').locator('select').first();
+    await expect(tableSelect).toBeVisible();
+    await expect(tableSelect).toContainText(/Select a table|Loading tables/i);
   });
 
   test('displays party size selector', async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe('Storefront Reservations Page', () => {
     await page.goto('/reservations');
     const bookBtn = page.getByRole('button', { name: 'Book Table' });
     await expect(bookBtn).toBeVisible();
-    // Guest booking allowed — button disabled only until location/date/time filled
+    // Guest booking allowed — button disabled only until table/date/time filled
     await expect(bookBtn).toBeDisabled();
   });
 });

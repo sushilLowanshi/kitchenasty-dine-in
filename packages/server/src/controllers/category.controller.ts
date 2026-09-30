@@ -20,7 +20,21 @@ const updateCategorySchema = createCategorySchema.partial().omit({ slug: true })
 export async function listCategories(req: Request, res: Response): Promise<void> {
   let locationId = req.query.locationId as string | undefined;
   const staffLocationId = await getStaffLocationId(req);
-  if (staffLocationId) locationId = staffLocationId;
+  const isStaff = req.user?.type === 'staff';
+  const isSuperAdmin = isStaff && req.user?.role === 'SUPER_ADMIN';
+
+  if (staffLocationId) {
+    locationId = staffLocationId;
+  } else if (isStaff && !isSuperAdmin) {
+    res.json({ success: true, data: [] });
+    return;
+  } else if (!locationId && !isSuperAdmin) {
+    res.status(400).json({
+      success: false,
+      error: 'locationId query parameter is required',
+    });
+    return;
+  }
 
   const where: Record<string, unknown> = {};
   if (locationId) where.locationId = locationId;
@@ -71,8 +85,17 @@ export async function createCategory(req: Request, res: Response): Promise<void>
 
   const data = { ...parsed.data };
   const staffLocationId = await getStaffLocationId(req);
+  const isStaff = req.user?.type === 'staff';
+  const isSuperAdmin = isStaff && req.user?.role === 'SUPER_ADMIN';
+
   if (staffLocationId) {
     data.locationId = staffLocationId;
+  } else if (isStaff && !isSuperAdmin) {
+    res.status(403).json({
+      success: false,
+      error: 'No restaurant assigned to your account. Contact an admin before adding categories.',
+    });
+    return;
   } else if (data.locationId) {
     const scopeError = await assertLocationAccess(req, data.locationId);
     if (scopeError) {
@@ -164,6 +187,14 @@ export async function deleteCategory(req: Request<{ id: string }>, res: Response
   if (!existing) {
     res.status(404).json({ success: false, error: 'Category not found' });
     return;
+  }
+
+  if (existing.locationId) {
+    const scopeError = await assertLocationAccess(req, existing.locationId);
+    if (scopeError) {
+      res.status(403).json({ success: false, error: scopeError });
+      return;
+    }
   }
 
   const itemCount = await prisma.menuItem.count({ where: { categoryId: id } });

@@ -5,6 +5,8 @@ import { auditLog } from '../lib/audit.js';
 import { createAndSendInvite } from './staff.controller.js';
 import {
   assertLocationAccess,
+  buildInviteLink,
+  findPendingManagerInvite,
   getStaffLocationId,
   isSuperAdmin,
 } from '../lib/locationScope.js';
@@ -149,7 +151,33 @@ export async function getLocation(req: Request<{ id: string }>, res: Response): 
     return;
   }
 
-  res.json({ success: true, data: location });
+  // Staff only: expose pending manager invite + recoverable link (local SMTP often fails)
+  let pendingManagerInvite: {
+    id: string;
+    email: string;
+    expiresAt: Date;
+    inviteLink: string;
+  } | null = null;
+
+  if (req.user?.type === 'staff') {
+    const pending = await findPendingManagerInvite(id);
+    if (pending) {
+      pendingManagerInvite = {
+        id: pending.id,
+        email: pending.email,
+        expiresAt: pending.expiresAt,
+        inviteLink: buildInviteLink(pending.token),
+      };
+    }
+  }
+
+  res.json({
+    success: true,
+    data: {
+      ...location,
+      pendingManagerInvite,
+    },
+  });
 }
 
 export async function createLocation(req: Request, res: Response): Promise<void> {

@@ -3,7 +3,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher.js';
 import { useHeaderProps } from './useHeaderProps.js';
 
 export default function BoldHeader() {
-  const { t, user, logout, itemCount, openCart, settings, tableName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
+  const { t, user, logout, itemCount, openCart, settings, brandName, showCustomerAuth, paths, navLinks, isActive, mobileOpen, setMobileOpen } = useHeaderProps();
 
   return (
     <header className="bg-gray-950 text-white sticky top-0 z-50">
@@ -11,16 +11,13 @@ export default function BoldHeader() {
         <div className="flex items-center justify-between h-16">
           <Link to={paths.home} className="flex items-center gap-3">
             {settings.logo ? (
-              <img src={settings.logo} alt={settings.siteName} className="w-10 h-10 rounded-lg object-cover" />
+              <img src={settings.logo} alt={brandName} className="w-10 h-10 rounded-lg object-cover" />
             ) : (
               <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-black text-lg">{settings.siteName.charAt(0)}</span>
+                <span className="text-white font-black text-lg">{brandName.charAt(0)}</span>
               </div>
             )}
-            <span className="text-2xl font-black tracking-tight">{settings.siteName}</span>
-            {tableName && (
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-2 ml-1">{tableName}</span>
-            )}
+            <span className="text-2xl font-black tracking-tight">{brandName}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
