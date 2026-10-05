@@ -155,37 +155,62 @@ KitchenAsty enables restaurants, cafes, and takeaways to accept online orders fo
 
 ### Prerequisites
 
-- **Node.js** 22+ &nbsp;|&nbsp; **Docker** (for PostgreSQL) &nbsp;|&nbsp; **npm** 10+
+- **Node.js** 22+ &nbsp;|&nbsp; **Docker Desktop** (running) &nbsp;|&nbsp; **npm** 10+
 
-### 1. Clone & install
+### After clone **or** `git pull` (recommended — zero manual edits)
 
 ```bash
-git clone git@github.com:mighty840/kitchenasty.git
-cd kitchenasty
 npm install
+npm run setup
 ```
 
-### 2. Start the database
+`npm run setup` will:
+
+1. Create `packages/server/.env` from `.env.example` if missing  
+2. Point `DATABASE_URL` at Docker Postgres (`127.0.0.1:5433`)  
+3. Start **Postgres + Mailhog** with Docker  
+4. Run migrations + seed  
+
+Then start the apps locally:
 
 ```bash
-docker compose up -d
+npm run dev:server      # API        → http://localhost:3000
+npm run dev:admin       # Admin      → http://localhost:5173
+npm run dev:storefront  # Storefront → http://localhost:5174
 ```
 
-### 3. Set up environment & migrate
+Login: `admin@kitchenasty.com` / `admin123`
+
+### Full stack in Docker (optional)
 
 ```bash
-cp packages/server/.env.example packages/server/.env
-npx -w packages/server prisma migrate dev --schema ../../prisma/schema.prisma
-npx -w packages/server prisma db seed
+npm run docker:full
 ```
 
-### 4. Start development servers
+Admin → http://localhost:5173 · Storefront → http://localhost:5174 · API → http://localhost:3000  
+
+Stop with: `npm run docker:full:down`
+
+### If login shows “Can't reach database server”
+
+Docker Desktop sometimes drops the published port after sleep/restart:
 
 ```bash
-npm run dev:server      # API server → http://localhost:3000
-npm run dev:admin       # Admin panel → http://localhost:5173
-npm run dev:storefront  # Storefront  → http://localhost:5174
+npm run db:fix
+# then restart the API
+npm run dev:server
 ```
+
+### Useful scripts
+
+| Command | What it does |
+|---------|----------------|
+| `npm run setup` | Env + DB up + migrate + seed |
+| `npm run db:up` | Start Postgres + Mailhog only |
+| `npm run db:fix` | Restart Postgres (fix host port 5433) |
+| `npm run db:migrate` | Apply migrations |
+| `npm run db:seed` | Re-seed sample data |
+| `npm run docker:full` | Build & run entire app in Docker |
 
 ---
 
