@@ -6,6 +6,14 @@
     "packages/*"
   ],
   "scripts": {
+    "setup": "node scripts/setup-dev.mjs",
+    "db:up": "docker compose up -d postgres mailhog",
+    "db:down": "docker compose stop postgres mailhog",
+    "db:fix": "docker compose restart postgres && docker compose up -d postgres mailhog",
+    "db:migrate": "npx -w packages/server prisma migrate deploy --schema ../../prisma/schema.prisma",
+    "db:seed": "npx -w packages/server prisma db seed",
+    "docker:full": "docker compose --profile full up -d --build",
+    "docker:full:down": "docker compose --profile full down",
     "dev:server": "npm run dev -w packages/server",
     "dev:admin": "npm run dev -w packages/admin",
     "dev:storefront": "npm run dev -w packages/storefront",
