@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vitepress dev",
-    "build": "vitepress build",
+    "build": "VITEPRESS_BASE=/kitchenasty-dine-in/ vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {
